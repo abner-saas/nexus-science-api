@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.docker
+*.log
+.DS_Store
+coverage/
+*.tsbuildinfo
+deploy/nginx/certs/*
+!deploy/nginx/certs/.gitkeep
+drizzle/meta/

@@ -1,0 +1,35 @@
+name: Deploy KVM1
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-kvm1
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy via SSH
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.KVM_HOST }}
+          username: ${{ secrets.KVM_USER }}
+          key: ${{ secrets.KVM_SSH_KEY }}
+          port: ${{ secrets.KVM_PORT }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="${{ secrets.KVM_DEPLOY_PATH }}"
+            cd "$APP_DIR"
+            git fetch origin main
+            git reset --hard origin/main
+            docker compose --env-file .env.docker up -d --build --remove-orphans
+            docker image prune -f
+            curl -fsS http://127.0.0.1/health || curl -fsS http://127.0.0.1:3333/health
+            echo "Deploy OK"
