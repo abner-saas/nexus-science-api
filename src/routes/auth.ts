@@ -23,7 +23,8 @@ export async function authRoutes(fastify: FastifyInstance) {
     {
       config: {
         rateLimit: {
-          max: 5,
+          // Dev/QA: login suites switch roles often; keep prod strict.
+          max: env.NODE_ENV === "production" ? 5 : 200,
           timeWindow: "15 minutes",
         },
       },

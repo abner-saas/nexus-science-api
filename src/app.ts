@@ -10,6 +10,13 @@ import { studentsRoutes } from "./routes/students.js";
 import { healthRoutes } from "./routes/health.js";
 import { asaasWebhookRoutes } from "./routes/webhooks.asaas.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
+import { plansRoutes } from "./routes/plans.js";
+import { trainingRoutes } from "./routes/training.js";
+import { biofeedbackRoutes } from "./routes/biofeedback.js";
+import { financeRoutes } from "./routes/finance.js";
+import { assessmentsRoutes } from "./routes/assessments.js";
+import { retentionRoutes, aiInsightsRoutes } from "./routes/retention.js";
+import { usersRoutes } from "./routes/users.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -50,6 +57,14 @@ export async function buildApp() {
   await app.register(authRoutes);
   await app.register(studentsRoutes);
   await app.register(dashboardRoutes);
+  await app.register(plansRoutes);
+  await app.register(trainingRoutes);
+  await app.register(biofeedbackRoutes);
+  await app.register(financeRoutes);
+  await app.register(assessmentsRoutes);
+  await app.register(retentionRoutes);
+  await app.register(aiInsightsRoutes);
+  await app.register(usersRoutes);
   await app.register(asaasWebhookRoutes);
 
   app.setErrorHandler((error, _request, reply) => {

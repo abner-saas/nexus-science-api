@@ -2,7 +2,15 @@ import { eq } from "drizzle-orm";
 import { env } from "../lib/env.js";
 import { hashPassword } from "../services/auth.service.js";
 import { db } from "./index.js";
-import { plans, students, users } from "./schema.js";
+import {
+  biofeedback,
+  plans,
+  students,
+  trainingRoutines,
+  trainings,
+  transactions,
+  users,
+} from "./schema.js";
 import { encryptField } from "../lib/encryption.js";
 
 async function seed() {
@@ -34,18 +42,21 @@ async function seed() {
           tier: "Bronze",
           value: "147.00",
           benefits: ["Treino mensal", "Suporte WhatsApp"],
+          checkoutUrl: "https://patitor.dev/checkout/bronze",
         },
         {
           name: "Silver",
           tier: "Silver",
           value: "297.00",
           benefits: ["Treino quinzenal", "Biofeedback", "Suporte prioritário"],
+          checkoutUrl: "https://patitor.dev/checkout/silver",
         },
         {
           name: "Gold",
           tier: "Gold",
           value: "497.00",
           benefits: ["Treino semanal", "Avaliação física", "IA Insights"],
+          checkoutUrl: "https://patitor.dev/checkout/gold",
         },
       ])
       .returning();
@@ -82,6 +93,8 @@ async function seed() {
         risk: 15,
         heightCm: 165,
         monthlyWeight: "68.50",
+        lastBiofeedback: new Date().toISOString().slice(0, 10),
+        lastCheckin: new Date().toISOString().slice(0, 10),
         restrictionsEncrypted: encryptField("Nenhuma"),
       },
       {
@@ -100,6 +113,8 @@ async function seed() {
         risk: 8,
         heightCm: 182,
         monthlyWeight: "92.00",
+        lastBiofeedback: new Date().toISOString().slice(0, 10),
+        lastCheckin: new Date().toISOString().slice(0, 10),
         restrictionsEncrypted: encryptField("Lombalgia leve"),
       },
       {
@@ -123,6 +138,111 @@ async function seed() {
       },
     ]);
     console.log("Alunos de demonstração criados");
+  }
+
+  const allStudents = await db.select().from(students);
+  const oliver = allStudents.find((s) => s.name === "Oliver");
+
+  const txCount = await db.select().from(transactions).limit(1);
+  if (txCount.length === 0) {
+    const months = ["2026-03-01", "2026-04-01", "2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01"];
+    await db.insert(transactions).values(
+      months.flatMap((date, i) => [
+        {
+          type: "RECEITA" as const,
+          category: "Mensalidades",
+          description: `Receita ${date.slice(0, 7)}`,
+          amount: String(1800 + i * 120),
+          date,
+        },
+        {
+          type: "DESPESA" as const,
+          category: "Marketing",
+          description: `Ads ${date.slice(0, 7)}`,
+          amount: String(200 + i * 15),
+          date,
+        },
+        {
+          type: "DESPESA" as const,
+          category: "Operacional",
+          description: `Custos ${date.slice(0, 7)}`,
+          amount: "450.00",
+          date,
+        },
+      ]),
+    );
+    console.log("Transações de demonstração criadas");
+  }
+
+  const bioCount = await db.select().from(biofeedback).limit(1);
+  if (bioCount.length === 0 && oliver) {
+    const entries = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      entries.push({
+        studentId: oliver.id,
+        date: d.toISOString().slice(0, 10),
+        energy: 6 + (i % 4),
+        mood: 6 + (i % 3),
+        stress: 3 + (i % 4),
+        sleep: 6 + (i % 3),
+        sleepHours: String(6.5 + (i % 3) * 0.5),
+        hydration: String(2.5 + (i % 3) * 0.3),
+        musclePain: 2 + (i % 5),
+        weight: "68.50",
+        heightCm: 165,
+      });
+    }
+    await db.insert(biofeedback).values(entries);
+    console.log("Biofeedback de demonstração criado");
+  }
+
+  const routineCount = await db.select().from(trainingRoutines).limit(1);
+  if (routineCount.length === 0 && oliver) {
+    const [routine] = await db
+      .insert(trainingRoutines)
+      .values({
+        studentId: oliver.id,
+        name: "Rotina Hipertrofia ABC",
+        objective: "Ganho de massa e força",
+        frequency: 5,
+        startDate: "2026-06-01",
+        status: "Ativa",
+        totalSessions: 36,
+        completedSessions: 12,
+      })
+      .returning();
+
+    await db.insert(trainings).values([
+      {
+        routineId: routine.id,
+        code: "A",
+        name: "Treino A",
+        focus: "Membros Inferiores",
+        dayOfWeek: "Segunda",
+        duration: "50 min",
+        exercises: [
+          { name: "Agachamento Livre", group: "Quadríceps", sets: 4, reps: "12", load: 60, cadence: "2-1-2", rest: "60s" },
+          { name: "Leg Press 45°", group: "Quadríceps", sets: 4, reps: "15", load: 120, rest: "60s" },
+          { name: "Mesa Flexora", group: "Isquiotibiais", sets: 3, reps: "12", load: 35, rest: "45s" },
+        ],
+      },
+      {
+        routineId: routine.id,
+        code: "B",
+        name: "Treino B",
+        focus: "Peito / Tríceps",
+        dayOfWeek: "Quarta",
+        duration: "45 min",
+        exercises: [
+          { name: "Supino Reto", group: "Peitoral", sets: 4, reps: "10", load: 50, rest: "90s" },
+          { name: "Crucifixo", group: "Peitoral", sets: 3, reps: "12", load: 14, rest: "60s" },
+          { name: "Tríceps Corda", group: "Tríceps", sets: 3, reps: "15", load: 25, rest: "45s" },
+        ],
+      },
+    ]);
+    console.log("Rotina de treino de demonstração criada");
   }
 
   console.log("Seed concluído.");
