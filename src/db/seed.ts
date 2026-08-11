@@ -145,7 +145,14 @@ async function seed() {
 
   const txCount = await db.select().from(transactions).limit(1);
   if (txCount.length === 0) {
-    const months = ["2026-03-01", "2026-04-01", "2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01"];
+    const months = [
+      "2026-03-01",
+      "2026-04-01",
+      "2026-05-01",
+      "2026-06-01",
+      "2026-07-01",
+      "2026-08-01",
+    ];
     await db.insert(transactions).values(
       months.flatMap((date, i) => [
         {
@@ -223,9 +230,31 @@ async function seed() {
         dayOfWeek: "Segunda",
         duration: "50 min",
         exercises: [
-          { name: "Agachamento Livre", group: "Quadríceps", sets: 4, reps: "12", load: 60, cadence: "2-1-2", rest: "60s" },
-          { name: "Leg Press 45°", group: "Quadríceps", sets: 4, reps: "15", load: 120, rest: "60s" },
-          { name: "Mesa Flexora", group: "Isquiotibiais", sets: 3, reps: "12", load: 35, rest: "45s" },
+          {
+            name: "Agachamento Livre",
+            group: "Quadríceps",
+            sets: 4,
+            reps: "12",
+            load: 60,
+            cadence: "2-1-2",
+            rest: "60s",
+          },
+          {
+            name: "Leg Press 45°",
+            group: "Quadríceps",
+            sets: 4,
+            reps: "15",
+            load: 120,
+            rest: "60s",
+          },
+          {
+            name: "Mesa Flexora",
+            group: "Isquiotibiais",
+            sets: 3,
+            reps: "12",
+            load: 35,
+            rest: "45s",
+          },
         ],
       },
       {

@@ -87,7 +87,6 @@ export function refreshExpiryDate(expiresIn = "7d"): Date {
   if (!match) return new Date(now + 7 * 24 * 60 * 60 * 1000);
   const amount = Number(match[1]);
   const unit = match[2];
-  const mult =
-    unit === "d" ? 86400000 : unit === "h" ? 3600000 : unit === "m" ? 60000 : 1000;
+  const mult = unit === "d" ? 86400000 : unit === "h" ? 3600000 : unit === "m" ? 60000 : 1000;
   return new Date(now + amount * mult);
 }

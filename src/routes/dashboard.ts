@@ -7,10 +7,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/dashboard/summary",
     {
-      preHandler: [
-        fastify.authenticate,
-        fastify.authorize(["ADMIN", "FINANCE", "TRAINER"]),
-      ],
+      preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "FINANCE", "TRAINER"])],
     },
     async () => {
       const latest = await db.query.dailyMetrics.findFirst({
@@ -73,8 +70,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
                 : (a.risk ?? 0) >= 60
                   ? "Alto risco de churn"
                   : !a.lastBiofeedback ||
-                      new Date(a.lastBiofeedback) <
-                        new Date(Date.now() - 7 * 86400000)
+                      new Date(a.lastBiofeedback) < new Date(Date.now() - 7 * 86400000)
                     ? "Sem biofeedback há 7+ dias"
                     : "Ausente há 14+ dias",
           })),

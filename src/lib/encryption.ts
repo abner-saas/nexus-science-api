@@ -22,10 +22,7 @@ export function decryptField(payload: string): string {
   const key = Buffer.from(env.FIELD_ENCRYPTION_KEY, "hex");
   const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, "hex"));
   decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(dataHex, "hex")),
-    decipher.final(),
-  ]);
+  const decrypted = Buffer.concat([decipher.update(Buffer.from(dataHex, "hex")), decipher.final()]);
   return decrypted.toString("utf8");
 }
 

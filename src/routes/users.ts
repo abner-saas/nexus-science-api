@@ -12,11 +12,25 @@ export const ROLE_MATRIX = {
   ADMIN: {
     label: "Administrador / Proprietário",
     description: "Acesso total: equipe, financeiro, CRM, treinos, configurações",
-    modules: ["dashboard", "crm", "financeiro", "retencao", "treinos", "biofeedback", "avaliacao", "pagamentos", "planos", "ia", "configuracoes", "equipe"],
+    modules: [
+      "dashboard",
+      "crm",
+      "financeiro",
+      "retencao",
+      "treinos",
+      "biofeedback",
+      "avaliacao",
+      "pagamentos",
+      "planos",
+      "ia",
+      "configuracoes",
+      "equipe",
+    ],
   },
   TRAINER: {
     label: "Treinador / Coach",
-    description: "Só alunos atribuídos a ele: CRM, treinos, biofeedback, avaliação. Sem financeiro.",
+    description:
+      "Só alunos atribuídos a ele: CRM, treinos, biofeedback, avaliação. Sem financeiro.",
     modules: ["dashboard", "crm", "treinos", "biofeedback", "avaliacao", "retencao", "ia"],
   },
   FINANCE: {
@@ -132,10 +146,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
     }
 
     // Não permitir o único admin se desativar a si mesmo sem outro admin
-    if (
-      target.id === request.user.sub &&
-      parsed.data.active === false
-    ) {
+    if (target.id === request.user.sub && parsed.data.active === false) {
       return reply.status(400).send({
         error: "BadRequest",
         message: "Você não pode desativar a própria conta",
@@ -161,9 +172,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
           : {}),
         ...(parsed.data.role !== undefined ? { role: parsed.data.role } : {}),
         ...(parsed.data.active !== undefined ? { active: parsed.data.active } : {}),
-        ...(parsed.data.password
-          ? { passwordHash: await hashPassword(parsed.data.password) }
-          : {}),
+        ...(parsed.data.password ? { passwordHash: await hashPassword(parsed.data.password) } : {}),
         updatedAt: new Date(),
       })
       .where(eq(users.id, request.params.id))

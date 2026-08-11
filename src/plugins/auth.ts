@@ -45,7 +45,9 @@ export const authPlugin = fp(async (fastify) => {
       });
 
       if (!user || !user.active) {
-        return reply.status(401).send({ error: "Unauthorized", message: "Usuário inativo ou inválido" });
+        return reply
+          .status(401)
+          .send({ error: "Unauthorized", message: "Usuário inativo ou inválido" });
       }
 
       request.user = {
@@ -55,7 +57,9 @@ export const authPlugin = fp(async (fastify) => {
         studentId: user.studentId,
       };
     } catch {
-      return reply.status(401).send({ error: "Unauthorized", message: "Token inválido ou expirado" });
+      return reply
+        .status(401)
+        .send({ error: "Unauthorized", message: "Token inválido ou expirado" });
     }
   });
 

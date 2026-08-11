@@ -40,12 +40,16 @@ export async function authRoutes(fastify: FastifyInstance) {
 
       const user = await findUserByEmail(parsed.data.email);
       if (!user || !user.active) {
-        return reply.status(401).send({ error: "InvalidCredentials", message: "E-mail ou senha inválidos" });
+        return reply
+          .status(401)
+          .send({ error: "InvalidCredentials", message: "E-mail ou senha inválidos" });
       }
 
       const ok = await verifyPassword(parsed.data.password, user.passwordHash);
       if (!ok) {
-        return reply.status(401).send({ error: "InvalidCredentials", message: "E-mail ou senha inválidos" });
+        return reply
+          .status(401)
+          .send({ error: "InvalidCredentials", message: "E-mail ou senha inválidos" });
       }
 
       const payload = toJwtPayload(user);

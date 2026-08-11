@@ -46,7 +46,9 @@ async function main() {
   const patch = await call(`/trainings/${t.id}`, {
     method: "PATCH",
     body: JSON.stringify({
-      exercises: [{ name: "Leg Press", group: "Pernas", sets: 4, reps: "12", load: 80, rest: "90s" }],
+      exercises: [
+        { name: "Leg Press", group: "Pernas", sets: 4, reps: "12", load: 80, rest: "90s" },
+      ],
     }),
   });
   console.log("PATCH training", patch.status, patch.body?.data?.exercises?.[0]?.name);

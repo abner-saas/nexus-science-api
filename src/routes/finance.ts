@@ -24,8 +24,14 @@ export async function financeRoutes(fastify: FastifyInstance) {
   fastify.get("/finance/summary", readers, async (request) => {
     const q = z
       .object({
-        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        from: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        to: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
       })
       .safeParse(request.query);
 
@@ -106,11 +112,9 @@ export async function financeRoutes(fastify: FastifyInstance) {
     const rows = await db
       .select()
       .from(transactions)
-      .where(
-        q.success && q.data.type ? eq(transactions.type, q.data.type) : undefined,
-      )
+      .where(q.success && q.data.type ? eq(transactions.type, q.data.type) : undefined)
       .orderBy(desc(transactions.date))
-      .limit(q.success ? q.data.limit ?? 50 : 50);
+      .limit(q.success ? (q.data.limit ?? 50) : 50);
 
     return { data: rows };
   });
@@ -135,53 +139,61 @@ export async function financeRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({ data: row });
   });
 
-  fastify.get("/payments", {
-    preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "FINANCE", "STUDENT"])],
-  }, async (request) => {
-    const q = z.object({ studentId: z.string().uuid().optional() }).safeParse(request.query);
-    const studentId =
-      request.user.role === "STUDENT"
-        ? request.user.studentId ?? undefined
-        : q.success
-          ? q.data.studentId
-          : undefined;
+  fastify.get(
+    "/payments",
+    {
+      preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "FINANCE", "STUDENT"])],
+    },
+    async (request) => {
+      const q = z.object({ studentId: z.string().uuid().optional() }).safeParse(request.query);
+      const studentId =
+        request.user.role === "STUDENT"
+          ? (request.user.studentId ?? undefined)
+          : q.success
+            ? q.data.studentId
+            : undefined;
 
-    const rows = await db
-      .select()
-      .from(payments)
-      .where(studentId ? eq(payments.studentId, studentId) : undefined)
-      .orderBy(desc(payments.dueDate))
-      .limit(100);
+      const rows = await db
+        .select()
+        .from(payments)
+        .where(studentId ? eq(payments.studentId, studentId) : undefined)
+        .orderBy(desc(payments.dueDate))
+        .limit(100);
 
-    return { data: rows };
-  });
+      return { data: rows };
+    },
+  );
 
-  fastify.post("/payments", {
-    preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "FINANCE"])],
-  }, async (request, reply) => {
-    const body = z
-      .object({
-        studentId: z.string().uuid(),
-        amount: z.string().regex(/^\d+(\.\d{1,2})?$/),
-        method: z.enum(["PIX", "CREDIT_CARD", "BOLETO"]).optional(),
-        dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        checkoutUrl: z.string().url().optional().nullable(),
-      })
-      .safeParse(request.body);
-    if (!body.success) {
-      return reply.status(400).send({ error: "ValidationError", issues: body.error.flatten() });
-    }
-    const [row] = await db
-      .insert(payments)
-      .values({
-        studentId: body.data.studentId,
-        amount: body.data.amount,
-        method: body.data.method,
-        dueDate: body.data.dueDate,
-        checkoutUrl: body.data.checkoutUrl ?? null,
-        status: "PENDING",
-      })
-      .returning();
-    return reply.status(201).send({ data: row });
-  });
+  fastify.post(
+    "/payments",
+    {
+      preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "FINANCE"])],
+    },
+    async (request, reply) => {
+      const body = z
+        .object({
+          studentId: z.string().uuid(),
+          amount: z.string().regex(/^\d+(\.\d{1,2})?$/),
+          method: z.enum(["PIX", "CREDIT_CARD", "BOLETO"]).optional(),
+          dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          checkoutUrl: z.string().url().optional().nullable(),
+        })
+        .safeParse(request.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: "ValidationError", issues: body.error.flatten() });
+      }
+      const [row] = await db
+        .insert(payments)
+        .values({
+          studentId: body.data.studentId,
+          amount: body.data.amount,
+          method: body.data.method,
+          dueDate: body.data.dueDate,
+          checkoutUrl: body.data.checkoutUrl ?? null,
+          status: "PENDING",
+        })
+        .returning();
+      return reply.status(201).send({ data: row });
+    },
+  );
 }

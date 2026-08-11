@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { students } from "../db/schema.js";
 import { decryptField, encryptField } from "../lib/encryption.js";
@@ -133,9 +133,7 @@ export async function createStudent(input: StudentInput) {
       city: input.city ?? null,
       state: input.state ?? null,
       goal: input.goal ?? null,
-      restrictionsEncrypted: input.restrictions
-        ? encryptField(input.restrictions)
-        : null,
+      restrictionsEncrypted: input.restrictions ? encryptField(input.restrictions) : null,
       planId: input.planId ?? null,
       trainerId: input.trainerId ?? null,
       value: input.value ?? null,
@@ -170,9 +168,7 @@ export async function updateStudent(user: JwtPayload, id: string, input: Partial
       ...(input.goal !== undefined ? { goal: input.goal } : {}),
       ...(input.restrictions !== undefined
         ? {
-            restrictionsEncrypted: input.restrictions
-              ? encryptField(input.restrictions)
-              : null,
+            restrictionsEncrypted: input.restrictions ? encryptField(input.restrictions) : null,
           }
         : {}),
       ...(input.planId !== undefined ? { planId: input.planId } : {}),

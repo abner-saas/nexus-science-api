@@ -23,8 +23,16 @@ const routineBody = z.object({
   name: z.string().min(2).max(120),
   objective: z.string().max(500).optional().nullable(),
   frequency: z.number().int().min(1).max(7).default(3),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
   status: z.string().max(40).optional(),
   trainings: z
     .array(
@@ -61,9 +69,7 @@ export async function trainingRoutes(fastify: FastifyInstance) {
   };
 
   fastify.get("/routines", staff, async (request) => {
-    const q = z
-      .object({ studentId: z.string().uuid().optional() })
-      .safeParse(request.query);
+    const q = z.object({ studentId: z.string().uuid().optional() }).safeParse(request.query);
     const access = studentAccessFilter(request.user);
 
     let allowedIds: Set<string> | null = null;
@@ -82,9 +88,7 @@ export async function trainingRoutes(fastify: FastifyInstance) {
       )
       .orderBy(desc(trainingRoutines.createdAt));
 
-    const filtered = allowedIds
-      ? rows.filter((r) => allowedIds!.has(r.studentId))
-      : rows;
+    const filtered = allowedIds ? rows.filter((r) => allowedIds!.has(r.studentId)) : rows;
 
     if (request.user.role === "STUDENT" && request.user.studentId) {
       const own = filtered.filter((r) => r.studentId === request.user.studentId);
@@ -181,42 +185,46 @@ export async function trainingRoutes(fastify: FastifyInstance) {
     return { data: row };
   });
 
-  fastify.post<{ Params: { id: string } }>("/routines/:id/trainings", writers, async (request, reply) => {
-    if (!z.string().uuid().safeParse(request.params.id).success) {
-      return reply.status(400).send({ error: "InvalidId" });
-    }
-    const parsed = z
-      .object({
-        code: z.string().max(8),
-        name: z.string().max(120),
-        focus: z.string().max(120).optional().nullable(),
-        dayOfWeek: z.string().max(20).optional().nullable(),
-        duration: z.string().max(40).optional().nullable(),
-        exercises: z.array(exerciseSchema).default([]),
-      })
-      .safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
-    }
-    const routine = await db.query.trainingRoutines.findFirst({
-      where: eq(trainingRoutines.id, request.params.id),
-    });
-    if (!routine) return reply.status(404).send({ error: "NotFound" });
+  fastify.post<{ Params: { id: string } }>(
+    "/routines/:id/trainings",
+    writers,
+    async (request, reply) => {
+      if (!z.string().uuid().safeParse(request.params.id).success) {
+        return reply.status(400).send({ error: "InvalidId" });
+      }
+      const parsed = z
+        .object({
+          code: z.string().max(8),
+          name: z.string().max(120),
+          focus: z.string().max(120).optional().nullable(),
+          dayOfWeek: z.string().max(20).optional().nullable(),
+          duration: z.string().max(40).optional().nullable(),
+          exercises: z.array(exerciseSchema).default([]),
+        })
+        .safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
+      }
+      const routine = await db.query.trainingRoutines.findFirst({
+        where: eq(trainingRoutines.id, request.params.id),
+      });
+      if (!routine) return reply.status(404).send({ error: "NotFound" });
 
-    const [row] = await db
-      .insert(trainings)
-      .values({
-        routineId: request.params.id,
-        code: parsed.data.code,
-        name: parsed.data.name,
-        focus: parsed.data.focus ?? null,
-        dayOfWeek: parsed.data.dayOfWeek ?? null,
-        duration: parsed.data.duration ?? null,
-        exercises: parsed.data.exercises,
-      })
-      .returning();
-    return reply.status(201).send({ data: row });
-  });
+      const [row] = await db
+        .insert(trainings)
+        .values({
+          routineId: request.params.id,
+          code: parsed.data.code,
+          name: parsed.data.name,
+          focus: parsed.data.focus ?? null,
+          dayOfWeek: parsed.data.dayOfWeek ?? null,
+          duration: parsed.data.duration ?? null,
+          exercises: parsed.data.exercises,
+        })
+        .returning();
+      return reply.status(201).send({ data: row });
+    },
+  );
 
   fastify.delete<{ Params: { id: string } }>("/routines/:id", writers, async (request, reply) => {
     if (!z.string().uuid().safeParse(request.params.id).success) {
@@ -236,7 +244,7 @@ export async function trainingRoutes(fastify: FastifyInstance) {
 
     const studentId =
       request.user.role === "STUDENT"
-        ? request.user.studentId ?? undefined
+        ? (request.user.studentId ?? undefined)
         : q.success
           ? q.data.studentId
           : undefined;
@@ -246,7 +254,7 @@ export async function trainingRoutes(fastify: FastifyInstance) {
       .from(trainingSessions)
       .where(studentId ? eq(trainingSessions.studentId, studentId) : undefined)
       .orderBy(desc(trainingSessions.date))
-      .limit(q.success ? q.data.limit ?? 50 : 50);
+      .limit(q.success ? (q.data.limit ?? 50) : 50);
 
     return { data: rows };
   });

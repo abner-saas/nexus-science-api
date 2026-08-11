@@ -98,7 +98,7 @@ async function main() {
     }),
   });
   const me = await req("GET /auth/me", "/auth/me");
-  const adminId = (me.body as { user?: { id: string } })?.user?.id;
+  const _adminId = (me.body as { user?: { id: string } })?.user?.id;
 
   section("DASHBOARD");
   await req("GET /dashboard/summary", "/dashboard/summary");
@@ -137,7 +137,7 @@ async function main() {
 
   section("PLANS");
   const plans = await req("GET /plans", "/plans");
-  const planId = (plans.body as { data?: Array<{ id: string }> })?.data?.[0]?.id;
+  const _planId = (plans.body as { data?: Array<{ id: string }> })?.data?.[0]?.id;
   const planCreate = await req("POST /plans", "/plans", {
     method: "POST",
     body: JSON.stringify({
@@ -313,7 +313,9 @@ async function main() {
   });
   await req("POST /webhooks/asaas (token)", "/webhooks/asaas", {
     method: "POST",
-    headers: { "asaas-access-token": process.env.ASAAS_WEBHOOK_TOKEN ?? "dev_asaas_webhook_token_change_me" },
+    headers: {
+      "asaas-access-token": process.env.ASAAS_WEBHOOK_TOKEN ?? "dev_asaas_webhook_token_change_me",
+    },
     body: JSON.stringify({
       event: "PAYMENT_CONFIRMED",
       payment: { id: "pay_qa_nonexistent" },

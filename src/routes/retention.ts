@@ -7,18 +7,14 @@ export async function retentionRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/retention",
     {
-      preHandler: [
-        fastify.authenticate,
-        fastify.authorize(["ADMIN", "TRAINER", "FINANCE"]),
-      ],
+      preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "TRAINER", "FINANCE"])],
     },
     async () => {
       const all = await db.select().from(students);
       const active = all.filter((s) => s.status === "Ativo");
       const cancelled = all.filter((s) => s.status === "Cancelado");
       const totalRelevant = active.length + cancelled.length;
-      const retentionRate =
-        totalRelevant > 0 ? (active.length / totalRelevant) * 100 : 100;
+      const retentionRate = totalRelevant > 0 ? (active.length / totalRelevant) * 100 : 100;
       const churnRate = 100 - retentionRate;
 
       const avgLtv =
@@ -27,8 +23,7 @@ export async function retentionRoutes(fastify: FastifyInstance) {
               const months = Math.max(
                 1,
                 Math.floor(
-                  (Date.now() - new Date(s.entryDate).getTime()) /
-                    (30 * 24 * 60 * 60 * 1000),
+                  (Date.now() - new Date(s.entryDate).getTime()) / (30 * 24 * 60 * 60 * 1000),
                 ),
               );
               return sum + Number(s.value ?? 0) * months;
@@ -44,16 +39,13 @@ export async function retentionRoutes(fastify: FastifyInstance) {
           if (s.status === "Inadimplente") reasons.push("Inadimplência");
           if (s.lastBiofeedback) {
             const days =
-              (Date.now() - new Date(s.lastBiofeedback).getTime()) /
-              (24 * 60 * 60 * 1000);
+              (Date.now() - new Date(s.lastBiofeedback).getTime()) / (24 * 60 * 60 * 1000);
             if (days >= 7) reasons.push("Sem biofeedback há 7+ dias");
           } else {
             reasons.push("Sem biofeedback registrado");
           }
           if (s.lastCheckin) {
-            const days =
-              (Date.now() - new Date(s.lastCheckin).getTime()) /
-              (24 * 60 * 60 * 1000);
+            const days = (Date.now() - new Date(s.lastCheckin).getTime()) / (24 * 60 * 60 * 1000);
             if (days >= 14) reasons.push("Ausente há 14+ dias");
           }
           const score = Math.min(

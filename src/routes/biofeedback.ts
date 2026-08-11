@@ -12,10 +12,22 @@ const entryBody = z.object({
   mood: z.number().int().min(1).max(10).optional().nullable(),
   stress: z.number().int().min(1).max(10).optional().nullable(),
   sleep: z.number().int().min(1).max(10).optional().nullable(),
-  sleepHours: z.string().regex(/^\d+(\.\d{1})?$/).optional().nullable(),
-  hydration: z.string().regex(/^\d+(\.\d{1})?$/).optional().nullable(),
+  sleepHours: z
+    .string()
+    .regex(/^\d+(\.\d{1})?$/)
+    .optional()
+    .nullable(),
+  hydration: z
+    .string()
+    .regex(/^\d+(\.\d{1})?$/)
+    .optional()
+    .nullable(),
   musclePain: z.number().int().min(1).max(10).optional().nullable(),
-  weight: z.string().regex(/^\d+(\.\d{1,2})?$/).optional().nullable(),
+  weight: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/)
+    .optional()
+    .nullable(),
   heightCm: z.number().int().min(100).max(250).optional().nullable(),
   calories: z.number().int().min(0).max(10000).optional().nullable(),
   hr: z.number().int().min(30).max(220).optional().nullable(),
@@ -24,10 +36,7 @@ const entryBody = z.object({
 
 export async function biofeedbackRoutes(fastify: FastifyInstance) {
   const staff = {
-    preHandler: [
-      fastify.authenticate,
-      fastify.authorize(["ADMIN", "TRAINER", "STUDENT"]),
-    ],
+    preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "TRAINER", "STUDENT"])],
   };
 
   fastify.get("/biofeedback", staff, async (request, reply) => {
@@ -54,12 +63,7 @@ export async function biofeedbackRoutes(fastify: FastifyInstance) {
     const rows = await db
       .select()
       .from(biofeedback)
-      .where(
-        and(
-          eq(biofeedback.studentId, q.data.studentId),
-          gte(biofeedback.date, sinceStr),
-        ),
-      )
+      .where(and(eq(biofeedback.studentId, q.data.studentId), gte(biofeedback.date, sinceStr)))
       .orderBy(desc(biofeedback.date));
 
     return { data: rows };
@@ -126,9 +130,7 @@ export async function biofeedbackRoutes(fastify: FastifyInstance) {
 
   /** IA interpretativa — últimos 7 dias + objetivo do aluno */
   fastify.post("/biofeedback/insight", staff, async (request, reply) => {
-    const body = z
-      .object({ studentId: z.string().uuid() })
-      .safeParse(request.body);
+    const body = z.object({ studentId: z.string().uuid() }).safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ error: "ValidationError" });
     }

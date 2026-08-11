@@ -79,13 +79,17 @@ export async function plansRoutes(fastify: FastifyInstance) {
     return { data: row };
   });
 
-  fastify.delete<{ Params: { id: string } }>("/plans/:id", {
-    preHandler: [fastify.authenticate, fastify.authorize(["ADMIN"])],
-  }, async (request, reply) => {
-    if (!z.string().uuid().safeParse(request.params.id).success) {
-      return reply.status(400).send({ error: "InvalidId" });
-    }
-    await db.delete(plans).where(eq(plans.id, request.params.id));
-    return reply.status(204).send();
-  });
+  fastify.delete<{ Params: { id: string } }>(
+    "/plans/:id",
+    {
+      preHandler: [fastify.authenticate, fastify.authorize(["ADMIN"])],
+    },
+    async (request, reply) => {
+      if (!z.string().uuid().safeParse(request.params.id).success) {
+        return reply.status(400).send({ error: "InvalidId" });
+      }
+      await db.delete(plans).where(eq(plans.id, request.params.id));
+      return reply.status(204).send();
+    },
+  );
 }

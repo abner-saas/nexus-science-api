@@ -8,14 +8,42 @@ import { encryptField, decryptField } from "../lib/encryption.js";
 const assessmentBody = z.object({
   studentId: z.string().uuid(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  weight: z.string().regex(/^\d+(\.\d{1,2})?$/).optional().nullable(),
+  weight: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/)
+    .optional()
+    .nullable(),
   heightCm: z.number().int().min(100).max(250).optional().nullable(),
-  bodyFat: z.string().regex(/^\d+(\.\d{1})?$/).optional().nullable(),
-  muscle: z.string().regex(/^\d+(\.\d{1})?$/).optional().nullable(),
-  waist: z.string().regex(/^\d+(\.\d{1})?$/).optional().nullable(),
-  hip: z.string().regex(/^\d+(\.\d{1})?$/).optional().nullable(),
-  thigh: z.string().regex(/^\d+(\.\d{1})?$/).optional().nullable(),
-  arm: z.string().regex(/^\d+(\.\d{1})?$/).optional().nullable(),
+  bodyFat: z
+    .string()
+    .regex(/^\d+(\.\d{1})?$/)
+    .optional()
+    .nullable(),
+  muscle: z
+    .string()
+    .regex(/^\d+(\.\d{1})?$/)
+    .optional()
+    .nullable(),
+  waist: z
+    .string()
+    .regex(/^\d+(\.\d{1})?$/)
+    .optional()
+    .nullable(),
+  hip: z
+    .string()
+    .regex(/^\d+(\.\d{1})?$/)
+    .optional()
+    .nullable(),
+  thigh: z
+    .string()
+    .regex(/^\d+(\.\d{1})?$/)
+    .optional()
+    .nullable(),
+  arm: z
+    .string()
+    .regex(/^\d+(\.\d{1})?$/)
+    .optional()
+    .nullable(),
   photoUrls: z.array(z.string().url()).max(10).optional(),
   notes: z.string().max(2000).optional().nullable(),
 });
@@ -30,10 +58,7 @@ function calcBmi(weight?: string | null, heightCm?: number | null) {
 
 export async function assessmentsRoutes(fastify: FastifyInstance) {
   const staff = {
-    preHandler: [
-      fastify.authenticate,
-      fastify.authorize(["ADMIN", "TRAINER", "STUDENT"]),
-    ],
+    preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "TRAINER", "STUDENT"])],
   };
 
   fastify.get("/assessments", staff, async (request, reply) => {
@@ -68,45 +93,49 @@ export async function assessmentsRoutes(fastify: FastifyInstance) {
     };
   });
 
-  fastify.post("/assessments", {
-    preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "TRAINER"])],
-  }, async (request, reply) => {
-    const parsed = assessmentBody.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
-    }
+  fastify.post(
+    "/assessments",
+    {
+      preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "TRAINER"])],
+    },
+    async (request, reply) => {
+      const parsed = assessmentBody.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
+      }
 
-    const bmi = calcBmi(parsed.data.weight, parsed.data.heightCm);
-    const [row] = await db
-      .insert(assessments)
-      .values({
-        studentId: parsed.data.studentId,
-        date: parsed.data.date,
-        weight: parsed.data.weight ?? null,
-        heightCm: parsed.data.heightCm ?? null,
-        bmi,
-        bodyFat: parsed.data.bodyFat ?? null,
-        muscle: parsed.data.muscle ?? null,
-        waist: parsed.data.waist ?? null,
-        hip: parsed.data.hip ?? null,
-        thigh: parsed.data.thigh ?? null,
-        arm: parsed.data.arm ?? null,
-        photoUrls: parsed.data.photoUrls ?? [],
-        notesEncrypted: parsed.data.notes ? encryptField(parsed.data.notes) : null,
-      })
-      .returning();
-
-    if (parsed.data.weight) {
-      await db
-        .update(students)
-        .set({
-          monthlyWeight: parsed.data.weight,
-          heightCm: parsed.data.heightCm ?? undefined,
-          updatedAt: new Date(),
+      const bmi = calcBmi(parsed.data.weight, parsed.data.heightCm);
+      const [row] = await db
+        .insert(assessments)
+        .values({
+          studentId: parsed.data.studentId,
+          date: parsed.data.date,
+          weight: parsed.data.weight ?? null,
+          heightCm: parsed.data.heightCm ?? null,
+          bmi,
+          bodyFat: parsed.data.bodyFat ?? null,
+          muscle: parsed.data.muscle ?? null,
+          waist: parsed.data.waist ?? null,
+          hip: parsed.data.hip ?? null,
+          thigh: parsed.data.thigh ?? null,
+          arm: parsed.data.arm ?? null,
+          photoUrls: parsed.data.photoUrls ?? [],
+          notesEncrypted: parsed.data.notes ? encryptField(parsed.data.notes) : null,
         })
-        .where(eq(students.id, parsed.data.studentId));
-    }
+        .returning();
 
-    return reply.status(201).send({ data: row });
-  });
+      if (parsed.data.weight) {
+        await db
+          .update(students)
+          .set({
+            monthlyWeight: parsed.data.weight,
+            heightCm: parsed.data.heightCm ?? undefined,
+            updatedAt: new Date(),
+          })
+          .where(eq(students.id, parsed.data.studentId));
+      }
+
+      return reply.status(201).send({ data: row });
+    },
+  );
 }

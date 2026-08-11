@@ -14,25 +14,44 @@ const studentBody = z.object({
   email: z.string().email().max(255).optional().nullable(),
   instagram: z.string().max(80).optional().nullable(),
   sex: z.enum(["M", "F", "O"]).optional().nullable(),
-  birthdate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  birthdate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
   city: z.string().max(80).optional().nullable(),
   state: z.string().length(2).optional().nullable(),
   goal: z.string().max(120).optional().nullable(),
   restrictions: z.string().max(2000).optional().nullable(),
   planId: z.string().uuid().optional().nullable(),
   trainerId: z.string().uuid().optional().nullable(),
-  value: z.string().regex(/^\d+(\.\d{1,2})?$/).optional().nullable(),
+  value: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/)
+    .optional()
+    .nullable(),
   status: z.enum(["Ativo", "Pausado", "Inadimplente", "Cancelado"]).optional(),
   entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  renewDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-  cancelDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  renewDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
+  cancelDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
   origin: z.string().max(60).optional().nullable(),
   priority: z.enum(["Alta", "Média", "Baixa"]).optional().nullable(),
   heightCm: z.number().int().min(100).max(250).optional().nullable(),
 });
 
 const updateBody = studentBody.partial().extend({
-  entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  entryDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 const listQuery = z.object({
