@@ -1,9 +1,19 @@
-import type { FastifyInstance } from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { env } from "../lib/env.js";
 import { db } from "../db/index.js";
 import { payments, students } from "../db/schema.js";
+import { env } from "../lib/env.js";
+
+/** Constant-time token comparison — a plain `!==` leaks match-length via response timing. */
+function safeTokenEquals(received: string | undefined, expected: string): boolean {
+  if (!received) return false;
+  const a = Buffer.from(received);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 const asaasEvent = z.object({
   event: z.string(),
@@ -35,7 +45,7 @@ export async function asaasWebhookRoutes(fastify: FastifyInstance) {
         (request.headers["asaas-access-token"] as string | undefined) ||
         (request.headers["x-asaas-token"] as string | undefined);
 
-      if (!env.ASAAS_WEBHOOK_TOKEN || token !== env.ASAAS_WEBHOOK_TOKEN) {
+      if (!env.ASAAS_WEBHOOK_TOKEN || !safeTokenEquals(token, env.ASAAS_WEBHOOK_TOKEN)) {
         return reply.status(401).send({ error: "Unauthorized" });
       }
 
