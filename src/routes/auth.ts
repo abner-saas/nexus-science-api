@@ -60,7 +60,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       const cookieOpts = {
         httpOnly: true,
         secure: env.COOKIE_SECURE,
-        sameSite: "strict" as const,
+        sameSite: env.COOKIE_SAME_SITE,
         path: "/",
         domain: env.COOKIE_DOMAIN === "localhost" ? undefined : env.COOKIE_DOMAIN,
       };
@@ -123,7 +123,11 @@ export async function authRoutes(fastify: FastifyInstance) {
     const token = request.cookies.refresh_token;
     if (token) await revokeRefreshToken(token);
 
-    reply.clearCookie("access_token", { path: "/" }).clearCookie("refresh_token", { path: "/" });
+    const clearOpts = {
+      path: "/",
+      domain: env.COOKIE_DOMAIN === "localhost" ? undefined : env.COOKIE_DOMAIN,
+    };
+    reply.clearCookie("access_token", clearOpts).clearCookie("refresh_token", clearOpts);
     return { ok: true };
   });
 

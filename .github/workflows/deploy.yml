@@ -31,5 +31,15 @@ jobs:
             git reset --hard origin/main
             docker compose --env-file .env.docker up -d --build --remove-orphans
             docker image prune -f
-            curl -fsS http://127.0.0.1/health || curl -fsS http://127.0.0.1:3333/health
+
+            for i in $(seq 1 15); do
+              status=$(docker inspect --format '{{.State.Health.Status}}' nexus-api 2>/dev/null || echo "starting")
+              if [ "$status" = "healthy" ]; then echo "API healthy"; break; fi
+              if [ "$i" = "15" ]; then
+                echo "API did not become healthy in time (status: $status)"
+                docker logs nexus-api --tail 80
+                exit 1
+              fi
+              sleep 2
+            done
             echo "Deploy OK"

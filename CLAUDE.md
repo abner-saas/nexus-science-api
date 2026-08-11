@@ -6,7 +6,7 @@ See also `../CLAUDE.md` for workspace-level context (this is one of two repos in
 
 ## Stack
 
-Fastify 5 + TypeScript (ESM, Node >=20) + Drizzle ORM (PostgreSQL) + Zod 4 for validation. Auth via `@fastify/jwt` with access/refresh tokens in HttpOnly/Secure/SameSite=Strict cookies.
+Fastify 5 + TypeScript (ESM, Node >=20) + Drizzle ORM (PostgreSQL) + Zod 4 for validation. Auth via `@fastify/jwt` with access/refresh tokens in HttpOnly/Secure cookies. `SameSite` is configurable (`COOKIE_SAME_SITE`, default `strict`) — production currently runs `none` because the frontend (Vercel) and API (`patitow.dev`) are on different root domains; see "Cross-domain auth gotcha" in `../nexus-science-web/CLAUDE.md` and `DEPLOY.md`.
 
 ## Commands
 
@@ -41,9 +41,7 @@ Required and validated at boot via Zod (`src/lib/env.ts`) — the process exits 
 - `CORS_ORIGIN` — comma-separated allowlist, never `*`
 - `DATABASE_URL`, `COOKIE_DOMAIN`, `COOKIE_SECURE`, `ASAAS_API_KEY`/`ASAAS_WEBHOOK_TOKEN`/`ASAAS_BASE_URL`, `AI_PROVIDER` (`openai`|`gemini`) + matching API key, `SEED_ADMIN_*`
 
-Two separate compose/env pairs exist — don't conflate them:
-- root `../docker-compose.yml` + `../.env` — local dev, Postgres only
-- `docker-compose.yml` + `.env.docker` — full KVM1 production stack (postgres+api+nginx, memory-capped)
+This repo's `docker-compose.yml` + `.env.docker` is the KVM1 production stack (postgres+api, memory-capped) — no nginx/Caddy of its own; the VPS's pre-existing shared Caddy instance handles TLS/reverse-proxy (see `DEPLOY.md`). The root workspace's `../docker-compose.yml` is a separate, git-untracked, apparently-unused duplicate of this same stack sitting in the local workspace folder — not part of the deploy pipeline (deploy.yml uses this repo's own compose file on the VPS). Worth cleaning up or ignoring; don't confuse the two.
 
 ## Auth / RBAC
 
@@ -52,6 +50,8 @@ Roles: `ADMIN`, `TRAINER`, `FINANCE`, `RECEPTION`, `STUDENT`. Trainers are restr
 ## Deploy
 
 Push to `main` (or manual dispatch) triggers `.github/workflows/deploy.yml`: SSHes into KVM1 and runs `git fetch origin main && git reset --hard origin/main && docker compose --env-file .env.docker up -d --build --remove-orphans`, then health-checks `/health`. This means **the KVM1 checkout must never have local hand-edits** — they get wiped on next deploy. The `deploy-api` skill (`/deploy-api`) walks this runbook; full details in `DEPLOY.md`.
+
+API is public at `https://api-abner-saas.patitow.dev`. **This KVM1 VPS is shared with an unrelated project** (own Caddy instance already owning ports 80/443, own Postgres/Redis) — the API's container joins that project's Docker network (`upi-avatar-napsi-backend_default`, declared as `external` in `docker-compose.yml`) so the shared Caddy can reverse-proxy to it. Full detail in `DEPLOY.md`'s "Arquitetura" section — read that before changing anything network/port-related on this deploy, since it can affect the other project too.
 
 ## Known accepted risk
 
