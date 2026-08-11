@@ -18,7 +18,8 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
-    "format:check": "biome format ."
+    "format:check": "biome format .",
+    "prepare": "husky"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
@@ -42,7 +43,12 @@
     "@types/bcrypt": "^6.0.0",
     "@types/node": "^26.1.2",
     "drizzle-kit": "^0.31.10",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
     "tsx": "^4.23.8",
     "typescript": "^7.0.2"
+  },
+  "lint-staged": {
+    "*.{ts,js,json}": ["biome check --write --no-errors-on-unmatched"]
   }
 }
