@@ -19,7 +19,7 @@
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

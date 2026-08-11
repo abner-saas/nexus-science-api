@@ -14,10 +14,11 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN addgroup -g 1000 nexus && adduser -u 1000 -G nexus -s /bin/sh -D nexus
+# node:20-alpine already ships a "node" user at uid/gid 1000 — reuse it
+# instead of creating a new one (which collided with the existing gid 1000).
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
-USER nexus
+USER node
 EXPOSE 3333
 CMD ["node", "dist/server.js"]
