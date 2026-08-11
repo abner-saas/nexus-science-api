@@ -14,7 +14,11 @@ Fastify 5 + TypeScript (ESM, Node >=20) + Drizzle ORM (PostgreSQL) + Zod 4 for v
 - `npm run build` — `tsc` to `dist/`
 - `npm run db:generate` / `db:migrate` / `db:push` / `db:studio` — Drizzle Kit
 - `npm run db:seed` — seeds DB, including the default admin user
-- CI runs `npx tsc --noEmit` then a Docker build — there is no separate lint step and no lint config in this repo.
+- `npm run lint` / `lint:fix` / `format` / `format:check` — Biome (lint+format in one tool). CI runs `tsc --noEmit` then `npm run lint` then a Docker build.
+
+## Linting — Biome, not ESLint
+
+`typescript-eslint` doesn't support this project's TypeScript version yet (hard runtime guard, not just a peer-dep warning — see `typescript-eslint/typescript-eslint#10940`). Biome is used instead since it ships its own TS parser and doesn't depend on the `typescript` package at all. Config is `biome.json`. A Husky pre-commit hook runs `biome check --write` on staged files (auto-fixes, doesn't block on fixable issues).
 
 ## Testing — no automated suite
 
@@ -48,6 +52,10 @@ Roles: `ADMIN`, `TRAINER`, `FINANCE`, `RECEPTION`, `STUDENT`. Trainers are restr
 ## Deploy
 
 Push to `main` (or manual dispatch) triggers `.github/workflows/deploy.yml`: SSHes into KVM1 and runs `git fetch origin main && git reset --hard origin/main && docker compose --env-file .env.docker up -d --build --remove-orphans`, then health-checks `/health`. This means **the KVM1 checkout must never have local hand-edits** — they get wiped on next deploy. The `deploy-api` skill (`/deploy-api`) walks this runbook; full details in `DEPLOY.md`.
+
+## Known accepted risk
+
+`npm audit` flags a moderate `esbuild`/`@esbuild-kit` vulnerability via `drizzle-kit` (dev dependency only). There's no real fix upstream — `drizzle-kit` still pulls this transitively as of its latest release, and `npm audit fix --force` would downgrade it 13+ minor versions to one predating its current config format. It's dev-tooling-only exposure (production image uses `npm ci --omit=dev`, confirmed in `Dockerfile`) — left as-is rather than risk breaking the migration workflow for a low-severity, non-production issue.
 
 ## Git workflow
 
