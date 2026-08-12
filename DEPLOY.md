@@ -3,12 +3,16 @@
 ## Arquitetura
 
 ```
-GitHub (main) → GitHub Actions (SSH) → KVM1
+GitHub (main) → GitHub Actions (Tailscale, tag:ci) → KVM1 (tag:prod-api)
                                       ├── Caddy (compartilhado, fora deste compose) :80/:443
                                       │     └── reverse_proxy → nexus-api:3333
                                       ├── nexus-api (Fastify, container "nexus-api")
                                       └── postgres (rede interna, sem porta publicada)
 ```
+
+O GitHub Actions **não conecta via SSH público**. O runner entra na tailnet como um node efêmero com a tag `tag:ci` (autenticado por um OAuth client escopado só a `auth_keys: write`) e faz o deploy via Tailscale SSH — sem precisar abrir nenhuma porta na VPS pro GitHub. Isso contornou o firewall do hPanel da Hostinger, que bloqueava conexões SSH vindas das faixas de IP do GitHub Actions (a porta 22 pública continua exatamente como estava antes, sem nenhuma mudança).
+
+A política de acesso da tailnet (Access controls) autoriza especificamente `tag:ci → tag:prod-api` via SSH como root, e nada além disso — ver `"ssh"` no policy file da tailnet.
 
 **Esta VPS é compartilhada com outro projeto** (não relacionado ao Nexus Science) que já roda um Caddy próprio, dono das portas 80/443 da máquina. Por isso o `docker-compose.yml` deste repo **não** sobe nginx/Caddy — o serviço `api` apenas entra numa rede Docker externa (`upi-avatar-napsi-backend_default`, já criada pelo outro projeto) pra ficar alcançável pelo Caddy compartilhado. Isso é uma particularidade **desta VPS específica**, não um padrão geral do projeto — se um dia o Nexus Science migrar pra uma VPS dedicada, o certo é voltar a ter um Caddy/nginx próprio no compose.
 
@@ -53,22 +57,27 @@ docker compose --env-file .env.docker up -d --build
 
 ## 2. Secrets no GitHub (`Settings → Secrets and variables → Actions`)
 
-| Secret | Exemplo |
-|--------|---------|
-| `KVM_HOST` | `203.0.113.10` |
-| `KVM_USER` | `deploy` |
-| `KVM_SSH_KEY` | conteúdo completo da chave **privada** `nexus_deploy` |
-| `KVM_PORT` | `22` (ou porta SSH custom) |
-| `KVM_DEPLOY_PATH` | `/opt/nexus-science-api` |
+| Secret | Uso |
+|--------|-----|
+| `TS_OAUTH_CLIENT_ID` | OAuth client da Tailscale — escopo `auth_keys: write`, restrito à tag `tag:ci`. É o que o `deploy.yml` usa de fato hoje. |
+| `TS_OAUTH_CLIENT_SECRET` | Secret desse mesmo OAuth client. |
+| `KVM_HOST` / `KVM_USER` / `KVM_SSH_KEY` / `KVM_PORT` | Legado do fluxo de SSH público original — não usados pelo `deploy.yml` atual, mantidos só como referência pra acesso manual/emergência (ver seção "Acesso manual" abaixo). |
+| `KVM_DEPLOY_PATH` | Caminho do checkout na VPS (`/opt/nexus-science-api`), hardcoded no `deploy.yml` hoje (não lido de secret no fluxo Tailscale). |
 
 Crie também o Environment `production` (opcional, mas recomendado) em **Settings → Environments**.
+
+Pra criar o OAuth client da Tailscale: **Settings → Trust credentials → New credential → OAuth**, escopo **Auth Keys: Write**, tag `tag:ci`. A tag precisa existir em `tagOwners` na política da tailnet antes.
 
 ## 3. Fluxo automático
 
 Todo push em `main`:
 
-1. Workflow `CI` — typecheck + build Docker  
-2. Workflow `Deploy KVM1` — SSH → `git reset --hard` → `docker compose up -d --build`
+1. Workflow `CI` — typecheck + build Docker
+2. Workflow `Deploy KVM1` — entra na tailnet como `tag:ci` → Tailscale SSH em `nexus-kvm1` (`tag:prod-api`) → `git reset --hard` → `docker compose up -d --build` → espera o healthcheck do container ficar `healthy`
+
+## Acesso manual / emergência
+
+A chave SSH dedicada (`nexus_deploy`) e o IP público (`KVM_HOST`) continuam funcionando pra acesso direto, fora do pipeline — útil se a Tailscale tiver algum problema pontual. `ssh -i ~/.ssh/nexus_deploy root@<KVM_HOST>`.
 
 ## 4. Domínio / SSL
 
