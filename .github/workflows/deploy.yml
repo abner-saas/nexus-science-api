@@ -9,37 +9,42 @@ concurrency:
   group: deploy-kvm1
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
-    name: Deploy via SSH
+    name: Deploy via Tailscale
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888 # v4.1.3
         with:
-          host: ${{ secrets.KVM_HOST }}
-          username: ${{ secrets.KVM_USER }}
-          key: ${{ secrets.KVM_SSH_KEY }}
-          port: ${{ secrets.KVM_PORT }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            APP_DIR="${{ secrets.KVM_DEPLOY_PATH }}"
-            cd "$APP_DIR"
-            git fetch origin main
-            git reset --hard origin/main
-            docker compose --env-file .env.docker up -d --build --remove-orphans
-            docker image prune -f
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
+          version: latest
 
-            for i in $(seq 1 15); do
-              status=$(docker inspect --format '{{.State.Health.Status}}' nexus-api 2>/dev/null || echo "starting")
-              if [ "$status" = "healthy" ]; then echo "API healthy"; break; fi
-              if [ "$i" = "15" ]; then
-                echo "API did not become healthy in time (status: $status)"
-                docker logs nexus-api --tail 80
-                exit 1
-              fi
-              sleep 2
-            done
-            echo "Deploy OK"
+      - name: Deploy over Tailscale SSH
+        run: |
+          tailscale ssh root@100.104.206.21 -- bash -s <<'EOF'
+          set -euo pipefail
+          cd /opt/nexus-science-api
+          git fetch origin main
+          git reset --hard origin/main
+          docker compose --env-file .env.docker up -d --build --remove-orphans
+          docker image prune -f
+
+          for i in $(seq 1 15); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' nexus-api 2>/dev/null || echo "starting")
+            if [ "$status" = "healthy" ]; then echo "API healthy"; break; fi
+            if [ "$i" = "15" ]; then
+              echo "API did not become healthy in time (status: $status)"
+              docker logs nexus-api --tail 80
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "Deploy OK"
+          EOF
