@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { payments, students } from "../db/schema.js";
+import { payments, students, transactions } from "../db/schema.js";
 import { env } from "../lib/env.js";
 
 /** Constant-time token comparison — a plain `!==` leaks match-length via response timing. */
@@ -74,6 +74,24 @@ export async function asaasWebhookRoutes(fastify: FastifyInstance) {
             .update(students)
             .set({ status: "Ativo", appAccess: true, updatedAt: new Date() })
             .where(eq(students.id, existing.studentId));
+
+          const alreadyBooked = await db
+            .select({ id: transactions.id })
+            .from(transactions)
+            .where(eq(transactions.paymentId, existing.id))
+            .limit(1);
+          if (alreadyBooked.length === 0) {
+            await db.insert(transactions).values({
+              type: "RECEITA",
+              category: "Mensalidades",
+              description: `Pagamento confirmado (${existing.method ?? "Asaas"})`,
+              amount: existing.amount,
+              date: new Date().toISOString().slice(0, 10),
+              studentId: existing.studentId,
+              paymentId: existing.id,
+              method: existing.method,
+            });
+          }
         }
       }
 

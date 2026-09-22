@@ -58,7 +58,8 @@ export const users = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     name: varchar("name", { length: 160 }).notNull(),
     email: varchar("email", { length: 255 }).notNull(),
-    passwordHash: text("password_hash").notNull(),
+    /** Null for OAuth-only accounts (Google via Better Auth). */
+    passwordHash: text("password_hash"),
     role: userRoleEnum("role").notNull().default("TRAINER"),
     active: boolean("active").notNull().default(true),
     studentId: uuid("student_id"),
@@ -325,6 +326,7 @@ export const transactions = pgTable(
     date: date("date").notNull(),
     studentId: uuid("student_id").references(() => students.id),
     paymentId: uuid("payment_id").references(() => payments.id),
+    method: paymentMethodEnum("method"),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },

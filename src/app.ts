@@ -7,6 +7,7 @@ import { env } from "./lib/env.js";
 import { authPlugin } from "./plugins/auth.js";
 import { assessmentsRoutes } from "./routes/assessments.js";
 import { authRoutes } from "./routes/auth.js";
+import { betterAuthRoutes } from "./routes/better-auth.js";
 import { biofeedbackRoutes } from "./routes/biofeedback.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { financeRoutes } from "./routes/finance.js";
@@ -43,6 +44,7 @@ export async function buildApp() {
     origin: origins,
     credentials: true,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   });
 
   await app.register(rateLimit, {
@@ -60,6 +62,7 @@ export async function buildApp() {
   });
 
   await app.register(authPlugin);
+  await app.register(betterAuthRoutes);
 
   await app.register(healthRoutes);
   await app.register(authRoutes);

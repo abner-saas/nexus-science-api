@@ -9,9 +9,10 @@ const txBody = z.object({
   category: z.string().min(1).max(80),
   description: z.string().max(255).optional().nullable(),
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  studentId: z.string().uuid().optional().nullable(),
-});
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    studentId: z.string().uuid().optional().nullable(),
+    method: z.enum(["PIX", "CREDIT_CARD", "BOLETO"]).optional().nullable(),
+  });
 
 export async function financeRoutes(fastify: FastifyInstance) {
   const readers = {
@@ -71,6 +72,24 @@ export async function financeRoutes(fastify: FastifyInstance) {
       .from(students)
       .groupBy(students.planId);
 
+    const byCategory = await db
+      .select({
+        category: transactions.category,
+        type: transactions.type,
+        total: sql<string>`coalesce(sum(${transactions.amount}), 0)`,
+      })
+      .from(transactions)
+      .where(where)
+      .groupBy(transactions.category, transactions.type);
+
+    const [overdue] = await db
+      .select({
+        amount: sql<string>`coalesce(sum(${students.value}), 0)`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(students)
+      .where(eq(students.status, "Inadimplente"));
+
     const series = await db
       .select({
         month: sql<string>`to_char(${transactions.date}::date, 'YYYY-MM')`,
@@ -90,7 +109,15 @@ export async function financeRoutes(fastify: FastifyInstance) {
         margin: +margin.toFixed(1),
         mrr: Number(mrrRow?.mrr ?? 0),
         arr: Number(mrrRow?.mrr ?? 0) * 12,
+        overdueAmount: Number(overdue?.amount ?? 0),
+        overdueCount: overdue?.count ?? 0,
         byPlan,
+        revenueByCategory: byCategory
+          .filter((c) => c.type === "RECEITA")
+          .map((c) => ({ category: c.category, total: Number(c.total) })),
+        expenseByCategory: byCategory
+          .filter((c) => c.type === "DESPESA")
+          .map((c) => ({ category: c.category, total: Number(c.total) })),
         series: series.map((s) => ({
           month: s.month,
           revenue: Number(s.revenue),
@@ -133,6 +160,7 @@ export async function financeRoutes(fastify: FastifyInstance) {
         amount: parsed.data.amount,
         date: parsed.data.date,
         studentId: parsed.data.studentId ?? null,
+        method: parsed.data.method ?? null,
         createdBy: request.user.sub,
       })
       .returning();

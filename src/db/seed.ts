@@ -143,6 +143,27 @@ async function seed() {
   const allStudents = await db.select().from(students);
   const oliver = allStudents.find((s) => s.name === "Oliver");
 
+  if (oliver) {
+    const studentLogin = await db.query.users.findFirst({
+      where: eq(users.email, "oliver@email.com"),
+    });
+    if (!studentLogin) {
+      await db.insert(users).values({
+        name: "Oliver",
+        email: "oliver@email.com",
+        passwordHash: await hashPassword("AlunoDemo123!"),
+        role: "STUDENT",
+        studentId: oliver.id,
+        active: true,
+      });
+      await db
+        .update(students)
+        .set({ appAccess: true, updatedAt: new Date() })
+        .where(eq(students.id, oliver.id));
+      console.log("Login do aluno demo: oliver@email.com / AlunoDemo123!");
+    }
+  }
+
   const txCount = await db.select().from(transactions).limit(1);
   if (txCount.length === 0) {
     const months = [
@@ -161,10 +182,11 @@ async function seed() {
           description: `Receita ${date.slice(0, 7)}`,
           amount: String(1800 + i * 120),
           date,
+          method: "PIX" as const,
         },
         {
           type: "DESPESA" as const,
-          category: "Marketing",
+          category: i % 2 === 0 ? "Marketing" : "Ferramentas",
           description: `Ads ${date.slice(0, 7)}`,
           amount: String(200 + i * 15),
           date,

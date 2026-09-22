@@ -44,6 +44,12 @@ export async function authRoutes(fastify: FastifyInstance) {
           .status(401)
           .send({ error: "InvalidCredentials", message: "E-mail ou senha inválidos" });
       }
+      if (!user.passwordHash) {
+        return reply.status(401).send({
+          error: "InvalidCredentials",
+          message: "Esta conta entra com Google. Use o botão Entrar com Google.",
+        });
+      }
 
       const ok = await verifyPassword(parsed.data.password, user.passwordHash);
       if (!ok) {
@@ -122,6 +128,14 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post("/auth/logout", { preHandler: [fastify.authenticate] }, async (request, reply) => {
     const token = request.cookies.refresh_token;
     if (token) await revokeRefreshToken(token);
+
+    try {
+      const { fromNodeHeaders } = await import("better-auth/node");
+      const { auth } = await import("../lib/better-auth.js");
+      await auth.api.signOut({ headers: fromNodeHeaders(request.headers) });
+    } catch {
+      /* no Better Auth session */
+    }
 
     const clearOpts = {
       path: "/",
