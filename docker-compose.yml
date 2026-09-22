@@ -66,6 +66,23 @@ services:
       - no-new-privileges:true
     user: "1000:1000"
 
+  migrate:
+    profiles: ["ops"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrate
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-nexus_science}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+
 networks:
   default:
   # Pre-existing Caddy instance on this VPS (shared with another project) handles

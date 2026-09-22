@@ -7,6 +7,7 @@ GitHub (main) → GitHub Actions (Tailscale, tag:ci) → KVM1 (tag:prod-api)
                                       ├── Caddy (compartilhado, fora deste compose) :80/:443
                                       │     └── reverse_proxy → nexus-api:3333
                                       ├── nexus-api (Fastify, container "nexus-api")
+                                      ├── migrate (one-shot, drizzle-kit push)
                                       └── postgres (rede interna, sem porta publicada)
 ```
 
@@ -43,37 +44,50 @@ ssh-copy-id -i ~/.ssh/nexus_deploy.pub USUARIO@IP_DA_KVM
 bash deploy/setup-kvm1.sh /opt/nexus-science-api git@github.com:SEU_USER/nexus-science-api.git
 ```
 
-Edite na VPS:
+Edite **só no GitHub** (Environment `production`): secrets `APP_ENV` e `DOCKER_ENV` — o deploy grava `/opt/nexus-science-api/.env` e `.env.docker`. Não edite esses arquivos na VPS; o próximo push sobrescreve.
 
-- `/opt/nexus-science-api/.env` — JWT, CORS (`https://seu-app.vercel.app`), Asaas, etc.
-- `/opt/nexus-science-api/.env.docker` — senha do Postgres
+Suba pela primeira vez (depois dos secrets no GitHub): `gh workflow run deploy.yml` neste repo, ou um push em `main`.
 
-Suba pela primeira vez:
+## 2. Secrets no GitHub (fonte da verdade)
 
-```bash
-cd /opt/nexus-science-api
-docker compose --env-file .env.docker up -d --build
-```
-
-## 2. Secrets no GitHub (`Settings → Secrets and variables → Actions`)
+Environment **`production`** → **Settings → Environments → production → Environment secrets**.
 
 | Secret | Uso |
 |--------|-----|
-| `TS_OAUTH_CLIENT_ID` | OAuth client da Tailscale — escopo `auth_keys: write`, restrito à tag `tag:ci`. É o que o `deploy.yml` usa de fato hoje. |
-| `TS_OAUTH_CLIENT_SECRET` | Secret desse mesmo OAuth client. |
-| `KVM_HOST` / `KVM_USER` / `KVM_SSH_KEY` / `KVM_PORT` | Legado do fluxo de SSH público original — não usados pelo `deploy.yml` atual, mantidos só como referência pra acesso manual/emergência (ver seção "Acesso manual" abaixo). |
-| `KVM_DEPLOY_PATH` | Caminho do checkout na VPS (`/opt/nexus-science-api`), hardcoded no `deploy.yml` hoje (não lido de secret no fluxo Tailscale). |
+| `TS_OAUTH_CLIENT_ID` | OAuth client da Tailscale — escopo `auth_keys: write`, tag `tag:ci`. |
+| `TS_OAUTH_CLIENT_SECRET` | Secret desse OAuth client. |
+| `APP_ENV` | Conteúdo inteiro do `.env` da API (JWT, CORS, Google, Asaas, OpenAI…). Mesmo formato do `.env.example`. |
+| `DOCKER_ENV` | Conteúdo inteiro do `.env.docker` (`POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`). |
 
-Crie também o Environment `production` (opcional, mas recomendado) em **Settings → Environments**.
+O job de deploy **falha antes de mexer na VPS** se `APP_ENV`/`DOCKER_ENV` estiverem vazios ou sem chaves obrigatórias (`scripts/check-prod-env.py`).
+
+Não commitar esses arquivos. O workflow copia o blob para a VPS (`chmod 600`) a cada deploy — a VPS só recebe.
+
+`KVM_HOST` / `KVM_USER` / `KVM_SSH_KEY` / `KVM_PORT` são legado do SSH público — não usados pelo `deploy.yml`.
 
 Pra criar o OAuth client da Tailscale: **Settings → Trust credentials → New credential → OAuth**, escopo **Auth Keys: Write**, tag `tag:ci`. A tag precisa existir em `tagOwners` na política da tailnet antes.
 
+### Bootstrap (uma vez)
+
+1. Pegue o `.env` e o `.env.docker` **atuais** da VPS (não cole no chat).
+2. Ajuste o `.env`: `BETTER_AUTH_URL=https://api-abner-saas.patitow.dev`, `COOKIE_SECURE=true`, `COOKIE_SAME_SITE=none`, `CORS_ORIGIN=https://nexus-science-web.vercel.app`, Google client/secret, `BETTER_AUTH_SECRET`.
+3. Cole cada arquivo em `APP_ENV` e `DOCKER_ENV` no Environment `production`.
+4. Só então dê push em `main` (ou `workflow_dispatch`).
+
+Trocar um valor depois: edita o secret no GitHub e roda o workflow de novo. Não SSH pra “dar um jeito” no `.env`.
+
 ## 3. Fluxo automático
 
-Todo push em `main`:
+Todo push em `main` (e `workflow_dispatch`):
 
-1. Workflow `CI` — typecheck + build Docker
-2. Workflow `Deploy KVM1` — entra na tailnet como `tag:ci` → Tailscale SSH em `nexus-kvm1` (`tag:prod-api`) → `git reset --hard` → `docker compose up -d --build` → espera o healthcheck do container ficar `healthy`
+1. Workflow `CI` — typecheck + build das imagens `runner` e `migrate`
+2. Workflow `Deploy KVM1` — valida `APP_ENV`/`DOCKER_ENV` → Tailscale → grava `.env` na VPS → `git reset --hard origin/main` → `scripts/deploy-remote.sh`:
+   - sobe Postgres
+   - `drizzle-kit push --force` (schema, inclusive `ba_*`)
+   - rebuild/recreate da API
+   - espera `healthy`
+
+`drizzle-kit push` aplica o diff do schema. `--force` auto-aprova statements que possam truncar — não delete coluna em `schema.ts` no mesmo deploy em que ainda precisa dos dados. Migrations versionadas (`drizzle-kit generate`) são o próximo passo se o time crescer.
 
 ## Acesso manual / emergência
 
@@ -102,61 +116,38 @@ sudo ufw enable
 
 ## 6. Google OAuth em produção
 
-O client secret **não vai no git**. Local usa `nexus-science-api/.env`; produção usa `/opt/nexus-science-api/.env` na KVM1 (`env_file` do compose). O `git reset --hard` do deploy **não apaga** esse arquivo (está no `.gitignore`).
+Front: `https://nexus-science-web.vercel.app`. API: `https://api-abner-saas.patitow.dev`.
 
-### Google Cloud Console (mesmo client do local, ou um client “Web — produção”)
+O deploy já aplica schema (`ba_*`, `password_hash` nullable) e já copia o `.env` do GitHub. O que **não** é env:
 
-Em **APIs e serviços → Credenciais → cliente OAuth 2.0 (aplicativo da Web)**:
+### Google Cloud Console (uma vez)
 
 **Origens JavaScript autorizadas**
 
 - `http://localhost:3000`
 - `http://localhost:3333`
-- `https://<front-vercel>` (ex.: `https://nexus-science-web.vercel.app` — o domínio real do projeto)
+- `https://nexus-science-web.vercel.app`
 - `https://api-abner-saas.patitow.dev`
 
-**URIs de redirecionamento autorizados** (tem que ser *exato*, senão `redirect_uri_mismatch`)
+**URIs de redirecionamento autorizados** (letra por letra)
 
 - `http://localhost:3333/api/auth/callback/google`
 - `https://api-abner-saas.patitow.dev/api/auth/callback/google`
 
-O callback é sempre a **API**, não a Vercel. O front só recebe o redirect depois (`/login/oauth`).
+O callback é a **API**, não a Vercel. Preview `*.vercel.app` de PR não entra — o Console não aceita wildcard.
 
-Preview `*.vercel.app` de PR **não** entra no Google: o Console não aceita wildcard. Google em preview não é suportado.
-
-### `/opt/nexus-science-api/.env` na VPS
-
-Além do que já existe para o login por senha (CORS + cookies cross-site):
+### Dentro do `APP_ENV` (GitHub)
 
 ```env
-CORS_ORIGIN=https://<front-vercel>
+CORS_ORIGIN=https://nexus-science-web.vercel.app
 COOKIE_SECURE=true
 COOKIE_SAME_SITE=none
-
 BETTER_AUTH_URL=https://api-abner-saas.patitow.dev
 BETTER_AUTH_SECRET=<openssl rand -base64 32>
-GOOGLE_CLIENT_ID=<o mesmo id do Console, ou o client de produção>
-GOOGLE_CLIENT_SECRET=<secret correspondente>
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
 ```
-
-`BETTER_AUTH_URL` é a URL **pública** HTTPS da API (a que o browser e o Google veem). Não usar `localhost`, hostname do Docker, nem IP interno.
 
 Vercel **não** leva `GOOGLE_CLIENT_*`. Só `NEXT_PUBLIC_API_URL=https://api-abner-saas.patitow.dev`.
 
-### Depois de editar o `.env` da VPS
-
-O compose só lê `env_file` na criação do container:
-
-```bash
-cd /opt/nexus-science-api
-docker compose --env-file .env.docker up -d --force-recreate api
-```
-
-Ou espera o próximo push em `main` (o workflow já recria). Confirmação: `GET https://api-abner-saas.patitow.dev/auth/providers` deve devolver `{"data":{"google":true}}`.
-
-### Ordem prática
-
-1. Salvar origens + redirect no Google Cloud (senão o deploy sobe e o botão quebra no mismatch).
-2. Colar as vars no `.env` da VPS.
-3. Commit/push do código (ou recreate se o código já estiver em `main`).
-4. Testar o botão no front de produção, não no localhost.
+Confirmação pós-deploy: `GET https://api-abner-saas.patitow.dev/auth/providers` → `{"data":{"google":true}}`.

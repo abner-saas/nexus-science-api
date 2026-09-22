@@ -41,7 +41,7 @@ Required and validated at boot via Zod (`src/lib/env.ts`) — the process exits 
 - `CORS_ORIGIN` — comma-separated allowlist, never `*`
 - `DATABASE_URL`, `COOKIE_DOMAIN`, `COOKIE_SECURE`, `ASAAS_API_KEY`/`ASAAS_WEBHOOK_TOKEN`/`ASAAS_BASE_URL`, `AI_PROVIDER` (`openai`|`gemini`) + matching API key, `SEED_ADMIN_*`
 
-This repo's `docker-compose.yml` + `.env.docker` is the KVM1 production stack (postgres+api, memory-capped) — no nginx/Caddy of its own; the VPS's pre-existing shared Caddy instance handles TLS/reverse-proxy (see `DEPLOY.md`). The root workspace's `../docker-compose.yml` is a separate, git-untracked, apparently-unused duplicate of this same stack sitting in the local workspace folder — not part of the deploy pipeline (deploy.yml uses this repo's own compose file on the VPS). Worth cleaning up or ignoring; don't confuse the two.
+This repo's `docker-compose.yml` + `.env.docker` is the KVM1 production stack (postgres+api+migrate profile, memory-capped). Production env files are **not** edited on the VPS — GitHub Environment `production` secrets `APP_ENV` / `DOCKER_ENV` are the source of truth and are copied on each deploy. The root workspace's `../docker-compose.yml` is a separate, git-untracked, apparently-unused duplicate — not part of the deploy pipeline.
 
 ## Auth / RBAC
 
@@ -49,7 +49,7 @@ Roles: `ADMIN`, `TRAINER`, `FINANCE`, `RECEPTION`, `STUDENT`. Trainers are restr
 
 ## Deploy
 
-Push to `main` (or manual dispatch) triggers `.github/workflows/deploy.yml`: the runner joins the Tailscale tailnet as an ephemeral `tag:ci` node (OAuth client scoped to `auth_keys: write` only), Tailscale-SSHes into KVM1 (`tag:prod-api`), and runs `git fetch origin main && git reset --hard origin/main && docker compose --env-file .env.docker up -d --build --remove-orphans`, then polls the container health status. **No public SSH is used by CI** — the VPS's port 22 stays exactly as it was, untouched; Tailscale avoided needing to fight the hPanel firewall that was blocking GitHub's runner IPs. This means **the KVM1 checkout must never have local hand-edits** — they get wiped on next deploy. The `deploy-api` skill (`/deploy-api`) walks this runbook; full details in `DEPLOY.md`.
+Push to `main` (or manual dispatch) triggers `.github/workflows/deploy.yml`: validate GitHub Environment secrets `APP_ENV` + `DOCKER_ENV`, copy them onto the VPS, `git reset --hard origin/main`, apply schema (`drizzle-kit push --force` via the `migrate` compose profile), then rebuild the API and wait until healthy. **No public SSH is used by CI.** The KVM1 checkout must never have local hand-edits — they get wiped on next deploy, and `.env` is overwritten from GitHub every time. The `deploy-api` skill (`/deploy-api`) walks this runbook; full details in `DEPLOY.md`.
 
 API is public at `https://api-abner-saas.patitow.dev`. **This KVM1 VPS is shared with an unrelated project** (own Caddy instance already owning ports 80/443, own Postgres/Redis) — the API's container joins that project's Docker network (`upi-avatar-napsi-backend_default`, declared as `external` in `docker-compose.yml`) so the shared Caddy can reverse-proxy to it. Full detail in `DEPLOY.md`'s "Arquitetura" section — read that before changing anything network/port-related on this deploy, since it can affect the other project too.
 

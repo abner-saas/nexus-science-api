@@ -11,6 +11,16 @@ COPY tsconfig.json drizzle.config.ts ./
 COPY src ./src
 RUN npm run build
 
+# One-shot schema apply on deploy. drizzle-kit is a devDependency — not in the runner image.
+FROM node:20-alpine AS migrate
+WORKDIR /app
+ENV HUSKY=0
+COPY package.json package-lock.json* ./
+RUN npm ci --ignore-scripts
+COPY drizzle.config.ts ./
+COPY src/db ./src/db
+CMD ["npx", "drizzle-kit", "push", "--force"]
+
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production

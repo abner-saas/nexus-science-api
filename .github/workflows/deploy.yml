@@ -18,6 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Check production env blobs
+        env:
+          APP_ENV: ${{ secrets.APP_ENV }}
+          DOCKER_ENV: ${{ secrets.DOCKER_ENV }}
+        run: python3 scripts/check-prod-env.py
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888 # v4.1.3
         with:
@@ -26,6 +34,17 @@ jobs:
           tags: tag:ci
           version: latest
 
+      - name: Sync env from GitHub to VPS
+        env:
+          APP_ENV: ${{ secrets.APP_ENV }}
+          DOCKER_ENV: ${{ secrets.DOCKER_ENV }}
+        run: |
+          set -euo pipefail
+          python3 -c 'import os,sys; sys.stdout.write(os.environ["APP_ENV"])' \
+            | tailscale ssh root@100.104.206.21 'cat > /opt/nexus-science-api/.env && chmod 600 /opt/nexus-science-api/.env'
+          python3 -c 'import os,sys; sys.stdout.write(os.environ["DOCKER_ENV"])' \
+            | tailscale ssh root@100.104.206.21 'cat > /opt/nexus-science-api/.env.docker && chmod 600 /opt/nexus-science-api/.env.docker'
+
       - name: Deploy over Tailscale SSH
         run: |
           tailscale ssh root@100.104.206.21 -- bash -s <<'EOF'
@@ -33,18 +52,6 @@ jobs:
           cd /opt/nexus-science-api
           git fetch origin main
           git reset --hard origin/main
-          docker compose --env-file .env.docker up -d --build --remove-orphans
-          docker image prune -f
-
-          for i in $(seq 1 15); do
-            status=$(docker inspect --format '{{.State.Health.Status}}' nexus-api 2>/dev/null || echo "starting")
-            if [ "$status" = "healthy" ]; then echo "API healthy"; break; fi
-            if [ "$i" = "15" ]; then
-              echo "API did not become healthy in time (status: $status)"
-              docker logs nexus-api --tail 80
-              exit 1
-            fi
-            sleep 2
-          done
-          echo "Deploy OK"
+          chmod +x scripts/deploy-remote.sh
+          bash scripts/deploy-remote.sh
           EOF

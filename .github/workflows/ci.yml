@@ -28,4 +28,5 @@ jobs:
     needs: typecheck
     steps:
       - uses: actions/checkout@v4
+      - run: docker build --target migrate -t nexus-science-api:migrate .
       - run: docker build -t nexus-science-api:ci .
