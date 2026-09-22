@@ -10,3 +10,4 @@ coverage/
 deploy/nginx/certs/*
 !deploy/nginx/certs/.gitkeep
 drizzle/meta/
+.*.env
