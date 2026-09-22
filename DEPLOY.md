@@ -99,3 +99,64 @@ sudo ufw enable
 ```
 
 **Nunca** exponha a porta 5432 do Postgres na internet — o `docker-compose.yml` deste repo já usa `expose` (rede interna) em vez de `ports`, então o Postgres do Nexus Science nunca fica acessível de fora mesmo sem UFW. (O Postgres do *outro* projeto nesta VPS, porém, está publicado em `0.0.0.0:5432` — fora do escopo deste repo, mas vale corrigir lá também.)
+
+## 6. Google OAuth em produção
+
+O client secret **não vai no git**. Local usa `nexus-science-api/.env`; produção usa `/opt/nexus-science-api/.env` na KVM1 (`env_file` do compose). O `git reset --hard` do deploy **não apaga** esse arquivo (está no `.gitignore`).
+
+### Google Cloud Console (mesmo client do local, ou um client “Web — produção”)
+
+Em **APIs e serviços → Credenciais → cliente OAuth 2.0 (aplicativo da Web)**:
+
+**Origens JavaScript autorizadas**
+
+- `http://localhost:3000`
+- `http://localhost:3333`
+- `https://<front-vercel>` (ex.: `https://nexus-science-web.vercel.app` — o domínio real do projeto)
+- `https://api-abner-saas.patitow.dev`
+
+**URIs de redirecionamento autorizados** (tem que ser *exato*, senão `redirect_uri_mismatch`)
+
+- `http://localhost:3333/api/auth/callback/google`
+- `https://api-abner-saas.patitow.dev/api/auth/callback/google`
+
+O callback é sempre a **API**, não a Vercel. O front só recebe o redirect depois (`/login/oauth`).
+
+Preview `*.vercel.app` de PR **não** entra no Google: o Console não aceita wildcard. Google em preview não é suportado.
+
+### `/opt/nexus-science-api/.env` na VPS
+
+Além do que já existe para o login por senha (CORS + cookies cross-site):
+
+```env
+CORS_ORIGIN=https://<front-vercel>
+COOKIE_SECURE=true
+COOKIE_SAME_SITE=none
+
+BETTER_AUTH_URL=https://api-abner-saas.patitow.dev
+BETTER_AUTH_SECRET=<openssl rand -base64 32>
+GOOGLE_CLIENT_ID=<o mesmo id do Console, ou o client de produção>
+GOOGLE_CLIENT_SECRET=<secret correspondente>
+```
+
+`BETTER_AUTH_URL` é a URL **pública** HTTPS da API (a que o browser e o Google veem). Não usar `localhost`, hostname do Docker, nem IP interno.
+
+Vercel **não** leva `GOOGLE_CLIENT_*`. Só `NEXT_PUBLIC_API_URL=https://api-abner-saas.patitow.dev`.
+
+### Depois de editar o `.env` da VPS
+
+O compose só lê `env_file` na criação do container:
+
+```bash
+cd /opt/nexus-science-api
+docker compose --env-file .env.docker up -d --force-recreate api
+```
+
+Ou espera o próximo push em `main` (o workflow já recria). Confirmação: `GET https://api-abner-saas.patitow.dev/auth/providers` deve devolver `{"data":{"google":true}}`.
+
+### Ordem prática
+
+1. Salvar origens + redirect no Google Cloud (senão o deploy sobe e o botão quebra no mismatch).
+2. Colar as vars no `.env` da VPS.
+3. Commit/push do código (ou recreate se o código já estiver em `main`).
+4. Testar o botão no front de produção, não no localhost.
