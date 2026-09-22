@@ -11,7 +11,10 @@ function displayName(name: string | null | undefined, email: string) {
   return (trimmed && trimmed.length > 0 ? trimmed : email.split("@")[0]).slice(0, 160);
 }
 
-/** Conta já existente (equipe ou aluno) entra; senão cria aluno + user ligados ao Google. */
+/**
+ * Liga Google a usuário/aluno já cadastrado.
+ * E-mail novo não vira aluno pagante — fica como lead (prévia / tour).
+ */
 export async function ensureAppUserFromOAuth(profile: {
   email: string;
   name?: string | null;
@@ -27,6 +30,13 @@ export async function ensureAppUserFromOAuth(profile: {
   });
   if (existing) return existing;
 
+  const [crm] = await db
+    .select()
+    .from(students)
+    .where(sql`lower(${students.email}) = ${email}`)
+    .limit(1);
+  if (!crm) return null;
+
   try {
     return await db.transaction(async (tx) => {
       const [again] = await tx
@@ -36,43 +46,21 @@ export async function ensureAppUserFromOAuth(profile: {
         .limit(1);
       if (again) return again;
 
-      const [crm] = await tx
-        .select()
-        .from(students)
-        .where(sql`lower(${students.email}) = ${email}`)
-        .limit(1);
-
-      const student =
-        crm ??
-        (
-          await tx
-            .insert(students)
-            .values({
-              name,
-              email,
-              entryDate: new Date().toISOString().slice(0, 10),
-              origin: "Google",
-              status: "Ativo",
-              appAccess: true,
-            })
-            .returning()
-        )[0];
-
-      if (crm && !crm.appAccess) {
+      if (!crm.appAccess) {
         await tx
           .update(students)
           .set({ appAccess: true, updatedAt: new Date() })
-          .where(eq(students.id, student.id));
+          .where(eq(students.id, crm.id));
       }
 
       const [created] = await tx
         .insert(users)
         .values({
-          name,
+          name: name || crm.name,
           email,
           passwordHash: null,
           role: "STUDENT",
-          studentId: student.id,
+          studentId: crm.id,
           active: true,
         })
         .returning();

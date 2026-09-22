@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { fromNodeHeaders } from "better-auth/node";
 import { env } from "../lib/env.js";
+import { auth } from "../lib/better-auth.js";
+import { ensureAppUserFromOAuth } from "../services/oauth-user.service.js";
 import {
   findUserByEmail,
   generateRefreshToken,
@@ -143,6 +146,43 @@ export async function authRoutes(fastify: FastifyInstance) {
     };
     reply.clearCookie("access_token", clearOpts).clearCookie("refresh_token", clearOpts);
     return { ok: true };
+  });
+
+  fastify.get("/auth/whoami", async (request) => {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(request.headers),
+    });
+    const email = session?.user?.email?.toLowerCase().trim();
+    if (!session?.user || !email) {
+      return { data: { kind: "guest" as const } };
+    }
+
+    const linked = await ensureAppUserFromOAuth({
+      email,
+      name: session.user.name,
+    });
+    if (linked?.active) {
+      return {
+        data: {
+          kind: "member" as const,
+          user: {
+            id: linked.id,
+            name: linked.name,
+            email: linked.email,
+            role: linked.role,
+            studentId: linked.studentId,
+          },
+        },
+      };
+    }
+
+    return {
+      data: {
+        kind: "lead" as const,
+        name: session.user.name || email.split("@")[0],
+        email,
+      },
+    };
   });
 
   fastify.get("/auth/me", { preHandler: [fastify.authenticate] }, async (request) => {

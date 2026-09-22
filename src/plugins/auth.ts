@@ -93,6 +93,15 @@ export const authPlugin = fp(async (fastify) => {
           email,
           name: session.user.name,
         });
+        if (!provisioned) {
+          return reply.status(403).send({
+            error: "LeadAccess",
+            code: "LEAD",
+            message: "Conta Google reconhecida. Solicite acesso ao treinador.",
+            name: session.user.name,
+            email,
+          });
+        }
         row = {
           id: provisioned.id,
           active: provisioned.active,
