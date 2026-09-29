@@ -20,6 +20,17 @@ const loginBody = z.object({
   password: z.string().min(8).max(128),
 });
 
+const sessionCookieOptions = {
+  path: "/",
+  domain: env.COOKIE_DOMAIN === "localhost" ? undefined : env.COOKIE_DOMAIN,
+  httpOnly: true,
+  secure: env.COOKIE_SECURE,
+  sameSite: env.COOKIE_SAME_SITE,
+};
+
+const ACCESS_TOKEN_MAX_AGE = 15 * 60;
+const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60;
+
 export async function authRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/auth/login",
@@ -66,22 +77,14 @@ export async function authRoutes(fastify: FastifyInstance) {
       const refreshToken = generateRefreshToken();
       await persistRefreshToken(user.id, refreshToken, refreshExpiryDate(env.JWT_REFRESH_EXPIRES));
 
-      const cookieOpts = {
-        httpOnly: true,
-        secure: env.COOKIE_SECURE,
-        sameSite: env.COOKIE_SAME_SITE,
-        path: "/",
-        domain: env.COOKIE_DOMAIN === "localhost" ? undefined : env.COOKIE_DOMAIN,
-      };
-
       reply
         .setCookie("access_token", accessToken, {
-          ...cookieOpts,
-          maxAge: 15 * 60,
+          ...sessionCookieOptions,
+          maxAge: ACCESS_TOKEN_MAX_AGE,
         })
         .setCookie("refresh_token", refreshToken, {
-          ...cookieOpts,
-          maxAge: 7 * 24 * 60 * 60,
+          ...sessionCookieOptions,
+          maxAge: REFRESH_TOKEN_MAX_AGE,
         });
 
       return {
@@ -113,17 +116,15 @@ export async function authRoutes(fastify: FastifyInstance) {
     const newRefresh = generateRefreshToken();
     await persistRefreshToken(user.id, newRefresh, refreshExpiryDate(env.JWT_REFRESH_EXPIRES));
 
-    const cookieOpts = {
-      httpOnly: true,
-      secure: env.COOKIE_SECURE,
-      sameSite: "strict" as const,
-      path: "/",
-      domain: env.COOKIE_DOMAIN === "localhost" ? undefined : env.COOKIE_DOMAIN,
-    };
-
     reply
-      .setCookie("access_token", accessToken, { ...cookieOpts, maxAge: 15 * 60 })
-      .setCookie("refresh_token", newRefresh, { ...cookieOpts, maxAge: 7 * 24 * 60 * 60 });
+      .setCookie("access_token", accessToken, {
+        ...sessionCookieOptions,
+        maxAge: ACCESS_TOKEN_MAX_AGE,
+      })
+      .setCookie("refresh_token", newRefresh, {
+        ...sessionCookieOptions,
+        maxAge: REFRESH_TOKEN_MAX_AGE,
+      });
 
     return { ok: true };
   });
@@ -140,11 +141,9 @@ export async function authRoutes(fastify: FastifyInstance) {
       /* no Better Auth session */
     }
 
-    const clearOpts = {
-      path: "/",
-      domain: env.COOKIE_DOMAIN === "localhost" ? undefined : env.COOKIE_DOMAIN,
-    };
-    reply.clearCookie("access_token", clearOpts).clearCookie("refresh_token", clearOpts);
+    reply
+      .clearCookie("access_token", sessionCookieOptions)
+      .clearCookie("refresh_token", sessionCookieOptions);
     return { ok: true };
   });
 

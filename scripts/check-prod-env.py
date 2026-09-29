@@ -54,8 +54,9 @@ def main() -> None:
     if "localhost" in app["CORS_ORIGIN"] and "https://" not in app["CORS_ORIGIN"]:
         print("CORS_ORIGIN must include the Vercel HTTPS origin in production.")
         sys.exit(1)
-    if app["COOKIE_SAME_SITE"] != "none":
-        print("COOKIE_SAME_SITE must be none while the front is on vercel.app.")
+    # strict quebra o retorno do Google (navegação vinda de google.com não leva o cookie de state).
+    if app["COOKIE_SAME_SITE"] not in ("lax", "none"):
+        print("COOKIE_SAME_SITE must be lax (front on *.patitow.dev) or none (front on vercel.app).")
         sys.exit(1)
     if app["COOKIE_SECURE"] != "true":
         print("COOKIE_SECURE must be true in production.")

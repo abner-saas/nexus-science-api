@@ -25,7 +25,7 @@ api-abner-saas.patitow.dev {
 }
 ```
 
-Frontend na Vercel aponta `NEXT_PUBLIC_API_URL` para `https://api-abner-saas.patitow.dev`. Como front (Vercel) e API (patitow.dev) estão em domínios raiz diferentes, os cookies de autenticação são cross-site — `COOKIE_SAME_SITE=none` (+ `COOKIE_SECURE=true`) é obrigatório no `.env` da API para o login funcionar; veja `.env.example`.
+Frontend na Vercel, servido em `https://nexus-science.patitow.dev`, aponta `NEXT_PUBLIC_API_URL` para `https://api-abner-saas.patitow.dev`. Front e API estão no mesmo domínio raiz (`patitow.dev`), então os cookies de autenticação são same-site: `COOKIE_SAME_SITE=lax` + `COOKIE_SECURE=true`. O domínio `nexus-science-web.vercel.app` só redireciona — nele os cookies da API seriam de terceiros, e Safari/Brave/aba anônima bloqueiam (sintoma: `state_mismatch` no Google).
 
 ## 1. Setup único na KVM1
 
@@ -70,7 +70,7 @@ Pra criar o OAuth client da Tailscale: **Settings → Trust credentials → New 
 ### Bootstrap (uma vez)
 
 1. Pegue o `.env` e o `.env.docker` **atuais** da VPS (não cole no chat).
-2. Ajuste o `.env`: `BETTER_AUTH_URL=https://api-abner-saas.patitow.dev`, `COOKIE_SECURE=true`, `COOKIE_SAME_SITE=none`, `CORS_ORIGIN=https://nexus-science-web.vercel.app`, Google client/secret, `BETTER_AUTH_SECRET`.
+2. Ajuste o `.env`: `BETTER_AUTH_URL=https://api-abner-saas.patitow.dev`, `COOKIE_SECURE=true`, `COOKIE_SAME_SITE=lax`, `CORS_ORIGIN=https://nexus-science.patitow.dev`, Google client/secret, `BETTER_AUTH_SECRET`.
 3. Cole cada arquivo em `APP_ENV` e `DOCKER_ENV` no Environment `production`.
 4. Só então dê push em `main` (ou `workflow_dispatch`).
 
@@ -116,7 +116,7 @@ sudo ufw enable
 
 ## 6. Google OAuth em produção
 
-Front: `https://nexus-science-web.vercel.app`. API: `https://api-abner-saas.patitow.dev`.
+Front: `https://nexus-science.patitow.dev`. API: `https://api-abner-saas.patitow.dev`.
 
 O deploy já aplica schema (`ba_*`, `password_hash` nullable) e já copia o `.env` do GitHub. O que **não** é env:
 
@@ -126,7 +126,7 @@ O deploy já aplica schema (`ba_*`, `password_hash` nullable) e já copia o `.en
 
 - `http://localhost:3000`
 - `http://localhost:3333`
-- `https://nexus-science-web.vercel.app`
+- `https://nexus-science.patitow.dev`
 - `https://api-abner-saas.patitow.dev`
 
 **URIs de redirecionamento autorizados** (letra por letra)
@@ -139,15 +139,15 @@ O callback é a **API**, não a Vercel. Preview `*.vercel.app` de PR não entra 
 ### Dentro do `APP_ENV` (GitHub)
 
 ```env
-CORS_ORIGIN=https://nexus-science-web.vercel.app
+CORS_ORIGIN=https://nexus-science.patitow.dev
 COOKIE_SECURE=true
-COOKIE_SAME_SITE=none
+COOKIE_SAME_SITE=lax
 BETTER_AUTH_URL=https://api-abner-saas.patitow.dev
 BETTER_AUTH_SECRET=<openssl rand -base64 32>
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 ```
 
-Vercel **não** leva `GOOGLE_CLIENT_*`. Só `NEXT_PUBLIC_API_URL=https://api-abner-saas.patitow.dev`.
+Vercel **não** leva `GOOGLE_CLIENT_*`. Só `NEXT_PUBLIC_API_URL=https://api-abner-saas.patitow.dev` e `NEXT_PUBLIC_SITE_URL=https://nexus-science.patitow.dev` (esta última liga o redirect do `.vercel.app` em `next.config.mjs`).
 
 Confirmação pós-deploy: `GET https://api-abner-saas.patitow.dev/auth/providers` → `{"data":{"google":true}}`.
