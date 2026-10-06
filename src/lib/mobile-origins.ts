@@ -17,6 +17,11 @@ export function mobileTrustedOrigins(nodeEnv: string): string[] {
       "exp://10.*.*.*:*/**",
       "exp://127.0.0.1:*/**",
     );
+    // Expo web no mesmo PC (npx expo start --web). Sem isto o better-auth
+    // recusa o Origin do Chrome. CORS já aceita estas portas em isAllowedCorsOrigin.
+    for (const port of DEV_METRO_PORTS) {
+      origins.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`);
+    }
   }
   return origins;
 }
