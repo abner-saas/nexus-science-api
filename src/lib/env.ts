@@ -21,6 +21,14 @@ const envSchema = z
     // "none" is required when the frontend and API are on different root domains
     // (cross-site requests) — browsers refuse SameSite=None without Secure=true.
     COOKIE_SAME_SITE: z.enum(["strict", "lax", "none"]).default("strict"),
+    // Vazio some no boot. Sem este token o push só registra o intento em log.
+    EXPO_ACCESS_TOKEN: z
+      .string()
+      .optional()
+      .transform((value) => {
+        const trimmed = value?.trim();
+        return trimmed ? trimmed : undefined;
+      }),
     ASAAS_API_KEY: z.string().optional(),
     ASAAS_WEBHOOK_TOKEN: z.string().optional(),
     ASAAS_BASE_URL: z.string().default("https://sandbox.asaas.com/api/v3"),

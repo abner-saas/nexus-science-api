@@ -30,7 +30,7 @@ const studentBody = z.object({
     .regex(/^\d+(\.\d{1,2})?$/)
     .optional()
     .nullable(),
-  status: z.enum(["Ativo", "Pausado", "Inadimplente", "Cancelado"]).optional(),
+  status: z.enum(["Ativo", "Pausado", "Inadimplente", "Cancelado", "Pendente"]).optional(),
   entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   renewDate: z
     .string()
@@ -56,7 +56,7 @@ const updateBody = studentBody.partial().extend({
 
 const listQuery = z.object({
   q: z.string().max(120).optional(),
-  status: z.enum(["Ativo", "Pausado", "Inadimplente", "Cancelado"]).optional(),
+  status: z.enum(["Ativo", "Pausado", "Inadimplente", "Cancelado", "Pendente"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });

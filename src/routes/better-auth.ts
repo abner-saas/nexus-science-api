@@ -1,5 +1,5 @@
-import type { FastifyInstance } from "fastify";
 import { fromNodeHeaders } from "better-auth/node";
+import type { FastifyInstance } from "fastify";
 import { auth, googleAuthEnabled } from "../lib/better-auth.js";
 
 export async function betterAuthRoutes(fastify: FastifyInstance) {
@@ -22,8 +22,13 @@ export async function betterAuthRoutes(fastify: FastifyInstance) {
       const response = await auth.handler(req);
       reply.status(response.status);
       response.headers.forEach((value, key) => {
+        if (key.toLowerCase() === "set-cookie") return;
         reply.header(key, value);
       });
+      // Headers.forEach collapses multiple Set-Cookie values. The Expo client
+      // stores every one of them, so forward the list the same way /auth/login does.
+      const setCookies = response.headers.getSetCookie?.() ?? [];
+      if (setCookies.length > 0) reply.header("set-cookie", setCookies);
       return reply.send(response.body ? await response.text() : null);
     },
   });

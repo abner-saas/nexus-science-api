@@ -4,15 +4,18 @@ import rateLimit from "@fastify/rate-limit";
 import sensible from "@fastify/sensible";
 import Fastify from "fastify";
 import { env } from "./lib/env.js";
+import { isAllowedCorsOrigin } from "./lib/mobile-origins.js";
 import { authPlugin } from "./plugins/auth.js";
 import { assessmentsRoutes } from "./routes/assessments.js";
 import { authRoutes } from "./routes/auth.js";
 import { betterAuthRoutes } from "./routes/better-auth.js";
 import { biofeedbackRoutes } from "./routes/biofeedback.js";
+import { checkoutRoutes } from "./routes/checkout.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { financeRoutes } from "./routes/finance.js";
 import { healthRoutes } from "./routes/health.js";
 import { plansRoutes } from "./routes/plans.js";
+import { pushTokenRoutes } from "./routes/push-tokens.js";
 import { aiInsightsRoutes, retentionRoutes } from "./routes/retention.js";
 import { studentsRoutes } from "./routes/students.js";
 import { trainingRoutes } from "./routes/training.js";
@@ -41,10 +44,19 @@ export async function buildApp() {
 
   const origins = env.CORS_ORIGIN.split(",").map((o) => o.trim());
   await app.register(cors, {
-    origin: origins,
+    origin: (origin, callback) => {
+      callback(null, isAllowedCorsOrigin(origin, origins, env.NODE_ENV));
+    },
     credentials: true,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    // expo-origin / x-skip-oauth-proxy: headers the @better-auth/expo client sends.
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "expo-origin",
+      "x-skip-oauth-proxy",
+    ],
   });
 
   await app.register(rateLimit, {
@@ -69,6 +81,8 @@ export async function buildApp() {
   await app.register(studentsRoutes);
   await app.register(dashboardRoutes);
   await app.register(plansRoutes);
+  await app.register(pushTokenRoutes);
+  await app.register(checkoutRoutes);
   await app.register(trainingRoutes);
   await app.register(biofeedbackRoutes);
   await app.register(financeRoutes);

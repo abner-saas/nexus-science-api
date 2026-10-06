@@ -151,6 +151,37 @@ async function main() {
   assert("student blocked finance", sfin.status === 403, sfin.status);
   const sstud = await call("/students");
   assert("student blocked staff CRM list", sstud.status === 403, sstud.status);
+  const splans = await call("/plans");
+  const splanRows = (splans.body?.data ?? []) as Array<{ active?: boolean; checkoutUrl?: string }>;
+  assert("student can read plans", splans.status === 200, splans.status);
+  assert(
+    "student plans are active catalog",
+    splanRows.every((plan) => plan.active === true && plan.checkoutUrl === undefined),
+    splans.status,
+  );
+  const spost = await call("/plans", {
+    method: "POST",
+    body: JSON.stringify({ name: "Nope", tier: "Custom", value: "10.00" }),
+  });
+  assert("student blocked create plan", spost.status === 403, spost.status);
+
+  cookies = "";
+  const leadEmail = `rbac.lead.${Date.now()}@test.local`;
+  const signup = await call("/api/auth/sign-up/email", {
+    method: "POST",
+    headers: { "expo-origin": "nexusscience://" },
+    body: JSON.stringify({
+      name: "Lead QA",
+      email: leadEmail,
+      password: "LeadQA123!",
+    }),
+  });
+  assert("lead sign-up", signup.status === 200, signup.status);
+  const leadPlans = await call("/plans");
+  assert("lead can read active plans", leadPlans.status === 200, leadPlans.status);
+  const leadStudents = await call("/students");
+  assert("lead still blocked on CRM", leadStudents.status === 403, leadStudents.status);
+  assert("lead CRM code stays LEAD", leadStudents.body?.code === "LEAD", leadStudents.body?.code);
 
   console.log(`\nRBAC: ${fails.length} fail(s)`);
   if (fails.length) process.exit(1);

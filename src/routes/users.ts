@@ -1,9 +1,10 @@
-import type { FastifyInstance } from "fastify";
 import { and, desc, eq, ne } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { students, users } from "../db/schema.js";
 import { hashPassword, revokeAllUserTokens } from "../services/auth.service.js";
+import { upsertBetterAuthCredential } from "../services/better-auth-credential.service.js";
 
 const STAFF_ROLES = ["ADMIN", "TRAINER", "FINANCE", "RECEPTION"] as const;
 
@@ -126,6 +127,14 @@ export async function usersRoutes(fastify: FastifyInstance) {
       })
       .returning();
 
+    // Mirrors the login into better-auth — without this, the account can't
+    // actually sign in post-migration (see `src/lib/better-auth.ts`).
+    await upsertBetterAuthCredential({
+      email,
+      name: row.name,
+      password: parsed.data.password,
+    });
+
     return reply.status(201).send({ data: publicUser(row) });
   });
 
@@ -182,6 +191,14 @@ export async function usersRoutes(fastify: FastifyInstance) {
       await revokeAllUserTokens(request.params.id);
     }
 
+    if (parsed.data.password) {
+      await upsertBetterAuthCredential({
+        email: row.email,
+        name: row.name,
+        password: parsed.data.password,
+      });
+    }
+
     return { data: publicUser(row) };
   });
 
@@ -222,6 +239,12 @@ export async function usersRoutes(fastify: FastifyInstance) {
       .update(students)
       .set({ appAccess: true, email, updatedAt: new Date() })
       .where(eq(students.id, body.data.studentId));
+
+    await upsertBetterAuthCredential({
+      email,
+      name: row.name,
+      password: body.data.password,
+    });
 
     return reply.status(201).send({ data: publicUser(row) });
   });

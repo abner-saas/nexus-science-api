@@ -18,7 +18,7 @@ export type StudentInput = {
   planId?: string | null;
   trainerId?: string | null;
   value?: string | null;
-  status?: "Ativo" | "Pausado" | "Inadimplente" | "Cancelado";
+  status?: "Ativo" | "Pausado" | "Inadimplente" | "Cancelado" | "Pendente";
   entryDate: string;
   renewDate?: string | null;
   cancelDate?: string | null;
