@@ -85,10 +85,9 @@ services:
 
 networks:
   default:
-  # Pre-existing Caddy instance on this VPS (shared with another project) handles
-  # TLS/reverse-proxy for all sites on the box — see ../CLAUDE.md "Shared VPS" note.
+  # Rede criada pelo stack de borda (Caddy) na KVM1: `docker network create edge`.
   shared_caddy:
-    name: upi-avatar-napsi-backend_default
+    name: edge
     external: true
 
 volumes:
