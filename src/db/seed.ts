@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
+import { encryptField } from "../lib/encryption.js";
 import { env } from "../lib/env.js";
 import { hashPassword } from "../services/auth.service.js";
+import { upsertBetterAuthCredential } from "../services/better-auth-credential.service.js";
 import { db } from "./index.js";
 import {
   biofeedback,
@@ -11,7 +13,6 @@ import {
   transactions,
   users,
 } from "./schema.js";
-import { encryptField } from "../lib/encryption.js";
 
 async function seed() {
   const email = (env.SEED_ADMIN_EMAIL ?? "admin@nexusscience.local").toLowerCase();
@@ -31,6 +32,9 @@ async function seed() {
   } else {
     console.log(`Admin já existe: ${email}`);
   }
+  // Mirrors into better-auth too — login agora é 100% better-auth
+  // (`src/lib/better-auth.ts`); sem isso o seed admin não consegue logar.
+  await upsertBetterAuthCredential({ email, name, password });
 
   const planCount = await db.select().from(plans).limit(1);
   if (planCount.length === 0) {
@@ -160,6 +164,11 @@ async function seed() {
         .update(students)
         .set({ appAccess: true, updatedAt: new Date() })
         .where(eq(students.id, oliver.id));
+      await upsertBetterAuthCredential({
+        email: "oliver@email.com",
+        name: "Oliver",
+        password: "AlunoDemo123!",
+      });
       console.log("Login do aluno demo: oliver@email.com / AlunoDemo123!");
     }
   }
@@ -237,7 +246,7 @@ async function seed() {
         objective: "Ganho de massa e força",
         frequency: 5,
         startDate: "2026-06-01",
-        status: "Ativa",
+        status: "Em andamento",
         totalSessions: 36,
         completedSessions: 12,
       })

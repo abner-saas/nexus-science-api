@@ -1,13 +1,13 @@
-import fp from "fastify-plugin";
-import fjwt from "@fastify/jwt";
 import fcookie from "@fastify/cookie";
-import type { FastifyReply, FastifyRequest } from "fastify";
-import { eq, sql } from "drizzle-orm";
+import fjwt from "@fastify/jwt";
 import { fromNodeHeaders } from "better-auth/node";
-import { env } from "../lib/env.js";
+import { eq, sql } from "drizzle-orm";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import fp from "fastify-plugin";
 import { db } from "../db/index.js";
 import { users } from "../db/schema.js";
 import { auth } from "../lib/better-auth.js";
+import { env } from "../lib/env.js";
 import { ensureAppUserFromOAuth } from "../services/oauth-user.service.js";
 import type { JwtPayload, UserRole } from "../types/auth.js";
 
@@ -78,12 +78,11 @@ export const authPlugin = fp(async (fastify) => {
           .status(401)
           .send({ error: "Unauthorized", message: "Token inválido ou expirado" });
       }
-      if (session.user.emailVerified === false) {
-        return reply.status(401).send({
-          error: "Unauthorized",
-          message: "E-mail Google não verificado",
-        });
-      }
+      // No `emailVerified` gate here: `requireEmailVerification` is
+      // deliberately off (`src/lib/better-auth.ts`) since there's no
+      // transactional-e-mail flow yet, and e-mail/senha sign-ups (unlike
+      // Google) never get `emailVerified: true` as a result. Enforcing it
+      // here would lock out every legitimate e-mail/senha account.
       let row = await db.query.users.findFirst({
         where: sql`lower(${users.email}) = ${email}`,
         columns: { id: true, active: true, role: true, studentId: true, email: true },

@@ -1,20 +1,20 @@
+import { relations } from "drizzle-orm";
 import {
+  boolean,
+  date,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgEnum,
   pgTable,
-  uuid,
-  varchar,
+  smallint,
   text,
   timestamp,
-  boolean,
-  integer,
-  smallint,
-  numeric,
-  date,
-  jsonb,
-  pgEnum,
-  index,
   uniqueIndex,
+  uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
 
 export const userRoleEnum = pgEnum("user_role", [
   "ADMIN",
@@ -29,6 +29,9 @@ export const studentStatusEnum = pgEnum("student_status", [
   "Pausado",
   "Inadimplente",
   "Cancelado",
+  // Lead com checkout iniciado e pagamento ainda não confirmado.
+  // Postgres não altera enum sozinho: ver scripts/add-student-status-pendente.sql.
+  "Pendente",
 ]);
 
 export const planTierEnum = pgEnum("plan_tier", ["Bronze", "Silver", "Gold", "Custom"]);
@@ -158,7 +161,7 @@ export const trainingRoutines = pgTable(
     frequency: smallint("frequency").notNull().default(3),
     startDate: date("start_date"),
     endDate: date("end_date"),
-    status: varchar("status", { length: 40 }).notNull().default("Ativa"),
+    status: varchar("status", { length: 40 }).notNull().default("Em digitação"),
     totalSessions: integer("total_sessions").default(0),
     completedSessions: integer("completed_sessions").default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -336,6 +339,20 @@ export const transactions = pgTable(
   }),
 );
 
+export const financeCategories = pgTable(
+  "finance_categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: varchar("name", { length: 80 }).notNull(),
+    type: transactionTypeEnum("type").notNull(),
+    matchTerms: text("match_terms").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    nameTypeIdx: uniqueIndex("finance_categories_name_type_uidx").on(t.name, t.type),
+  }),
+);
+
 /** Hourly-refreshed KPIs — avoid realtime LTV/CAC on every dashboard hit */
 export const dailyMetrics = pgTable(
   "daily_metrics",
@@ -388,6 +405,27 @@ export const platformSettings = pgTable("platform_settings", {
   collectionTemplates: jsonb("collection_templates"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const devicePushTokenPlatformEnum = pgEnum("device_push_token_platform", ["ios", "android"]);
+
+/** Um token por device. Upsert por `token`; `lastSeenAt` sobe a cada registro do app. */
+export const devicePushTokens = pgTable(
+  "device_push_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull(),
+    platform: devicePushTokenPlatformEnum("platform").notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index("device_push_tokens_user_idx").on(t.userId),
+    tokenIdx: uniqueIndex("device_push_tokens_token_uidx").on(t.token),
+  }),
+);
 
 export const studentsRelations = relations(students, ({ one, many }) => ({
   plan: one(plans, { fields: [students.planId], references: [plans.id] }),

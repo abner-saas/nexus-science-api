@@ -1,6 +1,7 @@
 import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { students } from "../db/schema.js";
+import { plans, students } from "../db/schema.js";
+import { todayInRecife } from "../domain/billing-status.js";
 import { decryptField, encryptField } from "../lib/encryption.js";
 import type { JwtPayload } from "../types/auth.js";
 
@@ -18,7 +19,7 @@ export type StudentInput = {
   planId?: string | null;
   trainerId?: string | null;
   value?: string | null;
-  status?: "Ativo" | "Pausado" | "Inadimplente" | "Cancelado";
+  status?: "Ativo" | "Pausado" | "Inadimplente" | "Cancelado" | "Pendente";
   entryDate: string;
   renewDate?: string | null;
   cancelDate?: string | null;
@@ -27,7 +28,7 @@ export type StudentInput = {
   heightCm?: number | null;
 };
 
-function mapStudent(row: typeof students.$inferSelect) {
+function mapStudent(row: typeof students.$inferSelect, planName: string | null = null) {
   let restrictions: string | null = null;
   if (row.restrictionsEncrypted) {
     try {
@@ -49,6 +50,7 @@ function mapStudent(row: typeof students.$inferSelect) {
     goal: row.goal,
     restrictions,
     planId: row.planId,
+    planName,
     trainerId: row.trainerId,
     value: row.value,
     status: row.status,
@@ -102,14 +104,24 @@ export async function listStudents(
 
   const where = filters.length ? and(...filters) : undefined;
   const rows = await db
-    .select()
+    .select({ student: students, planName: plans.name })
     .from(students)
+    .leftJoin(plans, eq(students.planId, plans.id))
     .where(where)
     .orderBy(desc(students.createdAt))
     .limit(opts.limit ?? 50)
     .offset(opts.offset ?? 0);
 
-  return rows.map(mapStudent);
+  return rows.map((row) => mapStudent(row.student, row.planName));
+}
+
+async function planNameOf(planId: string | null): Promise<string | null> {
+  if (!planId) return null;
+  const plan = await db.query.plans.findFirst({
+    where: eq(plans.id, planId),
+    columns: { name: true },
+  });
+  return plan?.name ?? null;
 }
 
 export async function getStudentById(user: JwtPayload, id: string) {
@@ -117,7 +129,7 @@ export async function getStudentById(user: JwtPayload, id: string) {
   const row = await db.query.students.findFirst({
     where: access ? and(eq(students.id, id), access) : eq(students.id, id),
   });
-  return row ? mapStudent(row) : null;
+  return row ? mapStudent(row, await planNameOf(row.planId)) : null;
 }
 
 export async function createStudent(input: StudentInput) {
@@ -147,7 +159,7 @@ export async function createStudent(input: StudentInput) {
     })
     .returning();
 
-  return mapStudent(row);
+  return mapStudent(row, await planNameOf(row.planId));
 }
 
 export async function updateStudent(user: JwtPayload, id: string, input: Partial<StudentInput>) {
@@ -174,10 +186,22 @@ export async function updateStudent(user: JwtPayload, id: string, input: Partial
       ...(input.planId !== undefined ? { planId: input.planId } : {}),
       ...(input.trainerId !== undefined ? { trainerId: input.trainerId } : {}),
       ...(input.value !== undefined ? { value: input.value } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.status === "Pausado" || input.status === "Cancelado" || input.status === "Pendente"
+        ? {
+            status: input.status,
+            appAccess: false,
+            ...(input.status === "Cancelado"
+              ? { cancelDate: input.cancelDate ?? todayInRecife() }
+              : {}),
+          }
+        : input.status === "Ativo" || input.status === "Inadimplente"
+          ? { status: "Ativo" as const, appAccess: true }
+          : {}),
       ...(input.entryDate !== undefined ? { entryDate: input.entryDate } : {}),
       ...(input.renewDate !== undefined ? { renewDate: input.renewDate } : {}),
-      ...(input.cancelDate !== undefined ? { cancelDate: input.cancelDate } : {}),
+      ...(input.cancelDate !== undefined && input.status !== "Cancelado"
+        ? { cancelDate: input.cancelDate }
+        : {}),
       ...(input.origin !== undefined ? { origin: input.origin } : {}),
       ...(input.priority !== undefined ? { priority: input.priority } : {}),
       ...(input.heightCm !== undefined ? { heightCm: input.heightCm } : {}),
@@ -186,7 +210,7 @@ export async function updateStudent(user: JwtPayload, id: string, input: Partial
     .where(eq(students.id, id))
     .returning();
 
-  return row ? mapStudent(row) : null;
+  return row ? mapStudent(row, await planNameOf(row.planId)) : null;
 }
 
 export async function deleteStudent(user: JwtPayload, id: string) {

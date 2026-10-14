@@ -15,6 +15,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/db/seed.ts",
+    "db:backfill-ba-accounts": "tsx scripts/backfill-ba-accounts.ts",
+    "test": "tsx --test src/domain/*.test.ts",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
@@ -22,6 +24,7 @@
     "prepare": "husky || true"
   },
   "dependencies": {
+    "@better-auth/expo": "^1.7.5",
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.1.0",
@@ -32,6 +35,7 @@
     "better-auth": "^1.7.5",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
+    "expo-server-sdk": "^7.2.0",
     "fastify": "^5.11.3",
     "fastify-plugin": "^6.0.0",
     "fastify-type-provider-zod": "^7.0.0",

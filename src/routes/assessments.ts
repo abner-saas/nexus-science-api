@@ -1,9 +1,10 @@
-import type { FastifyInstance } from "fastify";
 import { desc, eq } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { assessments, students } from "../db/schema.js";
-import { encryptField, decryptField } from "../lib/encryption.js";
+import { decryptField, encryptField } from "../lib/encryption.js";
+import { allowStudentContent } from "../services/billing.service.js";
 
 const assessmentBody = z.object({
   studentId: z.string().uuid(),
@@ -62,6 +63,7 @@ export async function assessmentsRoutes(fastify: FastifyInstance) {
   };
 
   fastify.get("/assessments", staff, async (request, reply) => {
+    if (!(await allowStudentContent(request, reply))) return;
     const q = z.object({ studentId: z.string().uuid() }).safeParse(request.query);
     if (!q.success) {
       return reply.status(400).send({ error: "ValidationError" });
