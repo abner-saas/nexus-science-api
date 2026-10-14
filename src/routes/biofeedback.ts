@@ -1,9 +1,11 @@
-import type { FastifyInstance } from "fastify";
 import { and, desc, eq, gte } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { env } from "../lib/env.js";
 import { db } from "../db/index.js";
 import { biofeedback, students } from "../db/schema.js";
+import { bioUpdateSet, buildLocalInsight, coerceDecimal } from "../domain/bio-metrics.js";
+import { env } from "../lib/env.js";
+import { allowStudentContent } from "../services/billing.service.js";
 
 const entryBody = z.object({
   studentId: z.string().uuid(),
@@ -12,22 +14,10 @@ const entryBody = z.object({
   mood: z.number().int().min(1).max(10).optional().nullable(),
   stress: z.number().int().min(1).max(10).optional().nullable(),
   sleep: z.number().int().min(1).max(10).optional().nullable(),
-  sleepHours: z
-    .string()
-    .regex(/^\d+(\.\d{1})?$/)
-    .optional()
-    .nullable(),
-  hydration: z
-    .string()
-    .regex(/^\d+(\.\d{1})?$/)
-    .optional()
-    .nullable(),
+  sleepHours: z.union([z.string(), z.number(), z.null()]).optional(),
+  hydration: z.union([z.string(), z.number(), z.null()]).optional(),
   musclePain: z.number().int().min(1).max(10).optional().nullable(),
-  weight: z
-    .string()
-    .regex(/^\d+(\.\d{1,2})?$/)
-    .optional()
-    .nullable(),
+  weight: z.union([z.string(), z.number(), z.null()]).optional(),
   heightCm: z.number().int().min(100).max(250).optional().nullable(),
   calories: z.number().int().min(0).max(10000).optional().nullable(),
   hr: z.number().int().min(30).max(220).optional().nullable(),
@@ -40,6 +30,7 @@ export async function biofeedbackRoutes(fastify: FastifyInstance) {
   };
 
   fastify.get("/biofeedback", staff, async (request, reply) => {
+    if (!(await allowStudentContent(request, reply))) return;
     const q = z
       .object({
         studentId: z.string().uuid(),
@@ -70,6 +61,7 @@ export async function biofeedbackRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post("/biofeedback", staff, async (request, reply) => {
+    if (!(await allowStudentContent(request, reply))) return;
     const parsed = entryBody.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
@@ -79,40 +71,41 @@ export async function biofeedbackRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ error: "Forbidden" });
     }
 
+    const sleepHours = coerceDecimal(parsed.data.sleepHours, 1);
+    const hydration = coerceDecimal(parsed.data.hydration, 1);
+    const weight = coerceDecimal(parsed.data.weight, 2);
+    if (!sleepHours.ok || !hydration.ok || !weight.ok) {
+      return reply.status(400).send({
+        error: "ValidationError",
+        message: "Hidratação, sono ou peso em formato inválido. Use número, como 2,5.",
+      });
+    }
+
+    const metrics = bioUpdateSet({
+      energy: parsed.data.energy,
+      mood: parsed.data.mood,
+      stress: parsed.data.stress,
+      sleep: parsed.data.sleep,
+      sleepHours: sleepHours.value,
+      hydration: hydration.value,
+      musclePain: parsed.data.musclePain,
+      weight: weight.value,
+      heightCm: parsed.data.heightCm,
+      calories: parsed.data.calories,
+      hr: parsed.data.hr,
+      steps: parsed.data.steps,
+    });
+
     const [row] = await db
       .insert(biofeedback)
       .values({
         studentId: parsed.data.studentId,
         date: parsed.data.date,
-        energy: parsed.data.energy ?? null,
-        mood: parsed.data.mood ?? null,
-        stress: parsed.data.stress ?? null,
-        sleep: parsed.data.sleep ?? null,
-        sleepHours: parsed.data.sleepHours ?? null,
-        hydration: parsed.data.hydration ?? null,
-        musclePain: parsed.data.musclePain ?? null,
-        weight: parsed.data.weight ?? null,
-        heightCm: parsed.data.heightCm ?? null,
-        calories: parsed.data.calories ?? null,
-        hr: parsed.data.hr ?? null,
-        steps: parsed.data.steps ?? null,
+        ...metrics,
       })
       .onConflictDoUpdate({
         target: [biofeedback.studentId, biofeedback.date],
-        set: {
-          energy: parsed.data.energy ?? null,
-          mood: parsed.data.mood ?? null,
-          stress: parsed.data.stress ?? null,
-          sleep: parsed.data.sleep ?? null,
-          sleepHours: parsed.data.sleepHours ?? null,
-          hydration: parsed.data.hydration ?? null,
-          musclePain: parsed.data.musclePain ?? null,
-          weight: parsed.data.weight ?? null,
-          heightCm: parsed.data.heightCm ?? null,
-          calories: parsed.data.calories ?? null,
-          hr: parsed.data.hr ?? null,
-          steps: parsed.data.steps ?? null,
-        },
+        set: Object.keys(metrics).length > 0 ? metrics : { date: parsed.data.date },
       })
       .returning();
 
@@ -120,7 +113,7 @@ export async function biofeedbackRoutes(fastify: FastifyInstance) {
       .update(students)
       .set({
         lastBiofeedback: parsed.data.date,
-        monthlyWeight: parsed.data.weight ?? undefined,
+        ...(typeof weight.value === "string" ? { monthlyWeight: weight.value } : {}),
         updatedAt: new Date(),
       })
       .where(eq(students.id, parsed.data.studentId));
@@ -130,6 +123,7 @@ export async function biofeedbackRoutes(fastify: FastifyInstance) {
 
   /** IA interpretativa — últimos 7 dias + objetivo do aluno */
   fastify.post("/biofeedback/insight", staff, async (request, reply) => {
+    if (!(await allowStudentContent(request, reply))) return;
     const body = z.object({ studentId: z.string().uuid() }).safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ error: "ValidationError" });
@@ -183,50 +177,13 @@ async function generateInsight(
     weight: r.weight,
   }));
 
-  const avg = (key: "energy" | "mood" | "stress" | "sleep" | "musclePain") => {
-    const vals = rows.map((r) => r[key]).filter((v): v is number => v != null);
-    if (!vals.length) return null;
-    return +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
-  };
-
-  // Fallback local se não houver API key (não bloqueia o produto)
   if (!env.OPENAI_API_KEY && !env.GEMINI_API_KEY) {
-    const energy = avg("energy");
-    const stress = avg("stress");
-    const sleep = avg("sleep");
-    const pain = avg("musclePain");
-    const parts: string[] = [
-      `Insight científico (local) para ${name} — objetivo: ${goal ?? "não informado"}.`,
-      `Últimos ${rows.length} dias: energia média ${energy ?? "n/d"}, sono ${sleep ?? "n/d"}, estresse ${stress ?? "n/d"}, dor muscular ${pain ?? "n/d"}.`,
-    ];
-    if (stress != null && stress >= 7) {
-      parts.push(
-        "Estresse elevado: priorize volume moderado, técnicas de respiração e sono consistente (7–9h). Evite PRs sob alta carga simpática.",
-      );
-    }
-    if (sleep != null && sleep <= 5) {
-      parts.push(
-        "Qualidade de sono baixa correlaciona com recuperação prejudicada e risco de overreaching. Reduza intensidade 10–20% até normalizar.",
-      );
-    }
-    if (pain != null && pain >= 7) {
-      parts.push(
-        "Dor muscular alta: revise amplitude e carga nos grupos afetados; inclua mobilidade e deload se persistir >72h.",
-      );
-    }
-    if (energy != null && energy >= 8 && (stress ?? 5) <= 4) {
-      parts.push(
-        "Janela favorável de performance: boa energia e estresse controlado — momento adequado para progressão de carga.",
-      );
-    }
-    parts.push(
-      "Configure OPENAI_API_KEY ou GEMINI_API_KEY para insights gerados por modelo com base em artigos e contexto clínico-esportivo.",
-    );
-    return parts.join("\n\n");
+    return buildLocalInsight(name, goal, rows);
   }
 
   const prompt = `Você é um consultor de ciências do exercício. Analise o biofeedback dos últimos 7 dias do aluno ${name} (objetivo: ${goal ?? "n/d"}).
 Dados JSON: ${JSON.stringify(summary)}
+Considere energia, humor, estresse, sono, hidratação e dor muscular. Não ignore humor nem hidratação quando os valores existirem.
 Escreva em português do Brasil, tom sóbrio e científico (Nexus Science), com: (1) leitura geral, (2) alertas, (3) ajustes de treino/recuperação, (4) recomendações práticas. Máx. 350 palavras.`;
 
   if (env.AI_PROVIDER === "gemini" && env.GEMINI_API_KEY) {
@@ -251,13 +208,14 @@ Escreva em português do Brasil, tom sóbrio e científico (Nexus Science), com:
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-5.6-luna",
       messages: [
         { role: "system", content: "Especialista em fisiologia do exercício e biofeedback." },
         { role: "user", content: prompt },
       ],
-      temperature: 0.4,
-      max_tokens: 600,
+      temperature: 0,
+      reasoning_effort: "none",
+      max_completion_tokens: 600,
     }),
   });
   const json = (await res.json()) as {

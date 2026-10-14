@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { isRecalculatedStatus, syncStudentBilling } from "../services/billing.service.js";
 import {
   createStudent,
   deleteStudent,
@@ -117,6 +118,11 @@ export async function studentsRoutes(fastify: FastifyInstance) {
     const data = await updateStudent(request.user, request.params.id, parsed.data);
     if (!data) {
       return reply.status(404).send({ error: "NotFound", message: "Aluno não encontrado" });
+    }
+    if (isRecalculatedStatus(parsed.data.status)) {
+      await syncStudentBilling(data.id);
+      const refreshed = await getStudentById(request.user, data.id);
+      return { data: refreshed };
     }
     return { data };
   });

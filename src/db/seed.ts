@@ -246,7 +246,7 @@ async function seed() {
         objective: "Ganho de massa e força",
         frequency: 5,
         startDate: "2026-06-01",
-        status: "Ativa",
+        status: "Em andamento",
         totalSessions: 36,
         completedSessions: 12,
       })

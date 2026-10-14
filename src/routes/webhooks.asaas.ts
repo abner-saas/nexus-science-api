@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "../db/index.js";
 import { payments, students, transactions } from "../db/schema.js";
 import { env } from "../lib/env.js";
+import { syncStudentBilling } from "../services/billing.service.js";
 import { listUserIdsForPush, notifyUsers } from "../services/push-notification.service.js";
 import type { UserRole } from "../types/auth.js";
 
@@ -74,10 +75,7 @@ export async function asaasWebhookRoutes(fastify: FastifyInstance) {
             .set({ status: "CONFIRMED", paidAt: new Date(), updatedAt: new Date() })
             .where(eq(payments.id, existing.id));
 
-          await db
-            .update(students)
-            .set({ status: "Ativo", appAccess: true, updatedAt: new Date() })
-            .where(eq(students.id, existing.studentId));
+          await syncStudentBilling(existing.studentId);
 
           const alreadyBooked = await db
             .select({ id: transactions.id })
@@ -111,10 +109,7 @@ export async function asaasWebhookRoutes(fastify: FastifyInstance) {
             .set({ status: "OVERDUE", updatedAt: new Date() })
             .where(eq(payments.id, existing.id));
 
-          await db
-            .update(students)
-            .set({ status: "Inadimplente", appAccess: false, updatedAt: new Date() })
-            .where(eq(students.id, existing.studentId));
+          await syncStudentBilling(existing.studentId);
 
           await notifyPayment(request.log, existing.studentId, ["ADMIN", "FINANCE"], {
             title: "Pagamento em atraso",

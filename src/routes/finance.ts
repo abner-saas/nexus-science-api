@@ -1,18 +1,33 @@
-import type { FastifyInstance } from "fastify";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { transactions, students, payments } from "../db/schema.js";
+import { payments, students, transactions } from "../db/schema.js";
+import { todayInRecife } from "../domain/billing-status.js";
+import { FINANCE_PERIODS, resolveFinancePeriod } from "../domain/finance-period.js";
+import {
+  createCategory,
+  deleteCategory,
+  listCategories,
+  suggestCategory,
+  updateCategory,
+} from "../services/finance-category.service.js";
 
 const txBody = z.object({
   type: z.enum(["RECEITA", "DESPESA"]),
-  category: z.string().min(1).max(80),
+  category: z.string().max(80).optional().nullable(),
   description: z.string().max(255).optional().nullable(),
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/),
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    studentId: z.string().uuid().optional().nullable(),
-    method: z.enum(["PIX", "CREDIT_CARD", "BOLETO"]).optional().nullable(),
-  });
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  studentId: z.string().uuid().optional().nullable(),
+  method: z.enum(["PIX", "CREDIT_CARD", "BOLETO"]).optional().nullable(),
+});
+
+const categoryBody = z.object({
+  name: z.string().min(2).max(80),
+  type: z.enum(["RECEITA", "DESPESA"]),
+  matchTerms: z.string().max(500).optional(),
+});
 
 export async function financeRoutes(fastify: FastifyInstance) {
   const readers = {
@@ -22,9 +37,10 @@ export async function financeRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "FINANCE"])],
   };
 
-  fastify.get("/finance/summary", readers, async (request) => {
+  fastify.get("/finance/summary", readers, async (request, reply) => {
     const q = z
       .object({
+        period: z.enum(FINANCE_PERIODS).optional(),
         from: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -36,8 +52,20 @@ export async function financeRoutes(fastify: FastifyInstance) {
       })
       .safeParse(request.query);
 
-    const from = q.success ? q.data.from : undefined;
-    const to = q.success ? q.data.to : undefined;
+    if (!q.success) {
+      return reply.status(400).send({ error: "ValidationError", issues: q.error.flatten() });
+    }
+
+    let from = q.data.from;
+    let to = q.data.to;
+    if (q.data.period) {
+      const range = resolveFinancePeriod(q.data.period, todayInRecife(), { from, to });
+      if ("error" in range) {
+        return reply.status(400).send({ error: "ValidationError", message: "Período inválido" });
+      }
+      from = range.from;
+      to = range.to;
+    }
 
     const filters = [];
     if (from) filters.push(gte(transactions.date, from));
@@ -103,6 +131,8 @@ export async function financeRoutes(fastify: FastifyInstance) {
 
     return {
       data: {
+        from: from ?? null,
+        to: to ?? null,
         revenue,
         expenses,
         profit,
@@ -151,11 +181,18 @@ export async function financeRoutes(fastify: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
     }
+    const category = await resolveTxCategory(parsed.data);
+    if (!category) {
+      return reply.status(400).send({
+        error: "ValidationError",
+        message: "Informe a categoria ou uma descrição reconhecida por uma categoria.",
+      });
+    }
     const [row] = await db
       .insert(transactions)
       .values({
         type: parsed.data.type,
-        category: parsed.data.category,
+        category,
         description: parsed.data.description ?? null,
         amount: parsed.data.amount,
         date: parsed.data.date,
@@ -166,6 +203,125 @@ export async function financeRoutes(fastify: FastifyInstance) {
       .returning();
     return reply.status(201).send({ data: row });
   });
+
+  fastify.patch<{ Params: { id: string } }>(
+    "/finance/transactions/:id",
+    writers,
+    async (request, reply) => {
+      if (!z.string().uuid().safeParse(request.params.id).success) {
+        return reply.status(400).send({ error: "InvalidId" });
+      }
+      const parsed = txBody.partial().safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
+      }
+      const current = await db.query.transactions.findFirst({
+        where: eq(transactions.id, request.params.id),
+      });
+      if (!current) return reply.status(404).send({ error: "NotFound" });
+
+      const type = parsed.data.type ?? current.type;
+      const description =
+        parsed.data.description !== undefined ? parsed.data.description : current.description;
+      let category = parsed.data.category?.trim() || current.category;
+      if (!parsed.data.category?.trim() && parsed.data.description) {
+        category = (await suggestCategory(parsed.data.description, type)) ?? category;
+      }
+      const [row] = await db
+        .update(transactions)
+        .set({
+          type,
+          category,
+          description: description ?? null,
+          ...(parsed.data.amount !== undefined ? { amount: parsed.data.amount } : {}),
+          ...(parsed.data.date !== undefined ? { date: parsed.data.date } : {}),
+          ...(parsed.data.studentId !== undefined ? { studentId: parsed.data.studentId } : {}),
+          ...(parsed.data.method !== undefined ? { method: parsed.data.method } : {}),
+        })
+        .where(eq(transactions.id, request.params.id))
+        .returning();
+      return { data: row };
+    },
+  );
+
+  fastify.delete<{ Params: { id: string } }>(
+    "/finance/transactions/:id",
+    writers,
+    async (request, reply) => {
+      if (!z.string().uuid().safeParse(request.params.id).success) {
+        return reply.status(400).send({ error: "InvalidId" });
+      }
+      const [row] = await db
+        .delete(transactions)
+        .where(eq(transactions.id, request.params.id))
+        .returning({ id: transactions.id });
+      if (!row) return reply.status(404).send({ error: "NotFound" });
+      return reply.status(204).send();
+    },
+  );
+
+  fastify.get("/finance/categories", readers, async () => {
+    return { data: await listCategories() };
+  });
+
+  fastify.get("/finance/category-match", readers, async (request) => {
+    const q = z
+      .object({
+        type: z.enum(["RECEITA", "DESPESA"]),
+        description: z.string().max(255).optional().default(""),
+      })
+      .safeParse(request.query);
+    if (!q.success) return { data: { category: null } };
+    return { data: { category: await suggestCategory(q.data.description, q.data.type) } };
+  });
+
+  fastify.post("/finance/categories", writers, async (request, reply) => {
+    const parsed = categoryBody.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
+    }
+    try {
+      const row = await createCategory({
+        name: parsed.data.name,
+        type: parsed.data.type,
+        matchTerms: parsed.data.matchTerms ?? "",
+      });
+      return reply.status(201).send({ data: row });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      return reply.status(409).send({ error: "Conflict", message: "Categoria já existe" });
+    }
+  });
+
+  fastify.patch<{ Params: { id: string } }>(
+    "/finance/categories/:id",
+    writers,
+    async (request, reply) => {
+      if (!z.string().uuid().safeParse(request.params.id).success) {
+        return reply.status(400).send({ error: "InvalidId" });
+      }
+      const parsed = categoryBody.partial().safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
+      }
+      const row = await updateCategory(request.params.id, parsed.data);
+      if (!row) return reply.status(404).send({ error: "NotFound" });
+      return { data: row };
+    },
+  );
+
+  fastify.delete<{ Params: { id: string } }>(
+    "/finance/categories/:id",
+    writers,
+    async (request, reply) => {
+      if (!z.string().uuid().safeParse(request.params.id).success) {
+        return reply.status(400).send({ error: "InvalidId" });
+      }
+      const removed = await deleteCategory(request.params.id);
+      if (!removed) return reply.status(404).send({ error: "NotFound" });
+      return reply.status(204).send();
+    },
+  );
 
   fastify.get(
     "/payments",
@@ -224,4 +380,22 @@ export async function financeRoutes(fastify: FastifyInstance) {
       return reply.status(201).send({ data: row });
     },
   );
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if ("code" in error && error.code === "23505") return true;
+  if ("cause" in error) return isUniqueViolation(error.cause);
+  return false;
+}
+
+async function resolveTxCategory(input: {
+  type: "RECEITA" | "DESPESA";
+  category?: string | null;
+  description?: string | null;
+}): Promise<string | null> {
+  const explicit = input.category?.trim();
+  if (explicit) return explicit;
+  if (!input.description?.trim()) return null;
+  return suggestCategory(input.description, input.type);
 }

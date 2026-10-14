@@ -1,8 +1,14 @@
-import type { FastifyInstance } from "fastify";
 import { desc, eq } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { students, trainingRoutines, trainings, trainingSessions } from "../db/schema.js";
+import { students, trainingRoutines, trainingSessions, trainings } from "../db/schema.js";
+import {
+  isCurrentRoutine,
+  planRoutineStatusChange,
+  ROUTINE_STATUSES,
+} from "../domain/routine-status.js";
+import { allowStudentContent } from "../services/billing.service.js";
 import { studentAccessFilter } from "../services/students.service.js";
 
 const exerciseSchema = z.object({
@@ -33,7 +39,7 @@ const routineBody = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional()
     .nullable(),
-  status: z.string().max(40).optional(),
+  status: z.enum(ROUTINE_STATUSES).optional(),
   trainings: z
     .array(
       z.object({
@@ -68,7 +74,8 @@ export async function trainingRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.authorize(["ADMIN", "TRAINER"])],
   };
 
-  fastify.get("/routines", staff, async (request) => {
+  fastify.get("/routines", staff, async (request, reply) => {
+    if (!(await allowStudentContent(request, reply))) return;
     const q = z.object({ studentId: z.string().uuid().optional() }).safeParse(request.query);
     const access = studentAccessFilter(request.user);
 
@@ -91,7 +98,10 @@ export async function trainingRoutes(fastify: FastifyInstance) {
     const filtered = allowedIds ? rows.filter((r) => allowedIds!.has(r.studentId)) : rows;
 
     if (request.user.role === "STUDENT" && request.user.studentId) {
-      const own = filtered.filter((r) => r.studentId === request.user.studentId);
+      const own = filtered.filter(
+        (routine) =>
+          routine.studentId === request.user.studentId && isCurrentRoutine(routine.status),
+      );
       return { data: await hydrateRoutines(own) };
     }
 
@@ -113,7 +123,7 @@ export async function trainingRoutes(fastify: FastifyInstance) {
         frequency: parsed.data.frequency,
         startDate: parsed.data.startDate ?? null,
         endDate: parsed.data.endDate ?? null,
-        status: parsed.data.status ?? "Ativa",
+        status: parsed.data.status ?? "Em digitação",
       })
       .returning();
 
@@ -149,12 +159,52 @@ export async function trainingRoutes(fastify: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
     }
+    const existing = await db.query.trainingRoutines.findFirst({
+      where: eq(trainingRoutines.id, request.params.id),
+    });
+    if (!existing) return reply.status(404).send({ error: "NotFound" });
+
+    let promotions: { id: string; status: string }[] = [];
+    if (parsed.data.status) {
+      const siblings = await db
+        .select({
+          id: trainingRoutines.id,
+          status: trainingRoutines.status,
+          createdAt: trainingRoutines.createdAt,
+        })
+        .from(trainingRoutines)
+        .where(eq(trainingRoutines.studentId, existing.studentId));
+      const plan = planRoutineStatusChange(
+        siblings.map((routine) => ({
+          id: routine.id,
+          status: routine.status,
+          createdAt: routine.createdAt.toISOString(),
+        })),
+        existing.id,
+        parsed.data.status,
+      );
+      if ("error" in plan) {
+        return reply
+          .status(400)
+          .send({ error: "ValidationError", message: "Status de rotina inválido" });
+      }
+      promotions = plan.updates.filter((update) => update.id !== existing.id);
+    }
+
     const [row] = await db
       .update(trainingRoutines)
       .set({ ...parsed.data, updatedAt: new Date() })
       .where(eq(trainingRoutines.id, request.params.id))
       .returning();
     if (!row) return reply.status(404).send({ error: "NotFound" });
+    if (promotions.length) {
+      for (const promotion of promotions) {
+        await db
+          .update(trainingRoutines)
+          .set({ status: promotion.status, updatedAt: new Date() })
+          .where(eq(trainingRoutines.id, promotion.id));
+      }
+    }
     const hydrated = await hydrateRoutines([row]);
     return { data: hydrated[0] };
   });
@@ -183,6 +233,22 @@ export async function trainingRoutes(fastify: FastifyInstance) {
       .returning();
     if (!row) return reply.status(404).send({ error: "NotFound" });
     return { data: row };
+  });
+
+  fastify.delete<{ Params: { id: string } }>("/trainings/:id", writers, async (request, reply) => {
+    if (!z.string().uuid().safeParse(request.params.id).success) {
+      return reply.status(400).send({ error: "InvalidId" });
+    }
+    await db
+      .update(trainingSessions)
+      .set({ trainingId: null })
+      .where(eq(trainingSessions.trainingId, request.params.id));
+    const [row] = await db
+      .delete(trainings)
+      .where(eq(trainings.id, request.params.id))
+      .returning({ id: trainings.id });
+    if (!row) return reply.status(404).send({ error: "NotFound" });
+    return reply.status(204).send();
   });
 
   fastify.post<{ Params: { id: string } }>(
@@ -234,7 +300,8 @@ export async function trainingRoutes(fastify: FastifyInstance) {
     return reply.status(204).send();
   });
 
-  fastify.get("/sessions", staff, async (request) => {
+  fastify.get("/sessions", staff, async (request, reply) => {
+    if (!(await allowStudentContent(request, reply))) return;
     const q = z
       .object({
         studentId: z.string().uuid().optional(),
@@ -260,6 +327,7 @@ export async function trainingRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post("/sessions", staff, async (request, reply) => {
+    if (!(await allowStudentContent(request, reply))) return;
     const parsed = sessionBody.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "ValidationError", issues: parsed.error.flatten() });
@@ -310,7 +378,11 @@ export async function trainingRoutes(fastify: FastifyInstance) {
 async function hydrateRoutines(rows: (typeof trainingRoutines.$inferSelect)[]) {
   return Promise.all(
     rows.map(async (r) => {
-      const t = await db.select().from(trainings).where(eq(trainings.routineId, r.id));
+      const t = await db
+        .select()
+        .from(trainings)
+        .where(eq(trainings.routineId, r.id))
+        .orderBy(trainings.code);
       const student = await db.query.students.findFirst({
         where: eq(students.id, r.studentId),
         columns: { id: true, name: true },

@@ -12,6 +12,7 @@ import {
   toJwtPayload,
   validateRefreshToken,
 } from "../services/auth.service.js";
+import { syncStudentBilling } from "../services/billing.service.js";
 import { ensureAppUserFromOAuth } from "../services/oauth-user.service.js";
 
 const loginBody = z.object({
@@ -184,6 +185,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       name: session.user.name,
     });
     if (linked?.active) {
+      const billing = linked.studentId ? await syncStudentBilling(linked.studentId) : null;
       return {
         data: {
           kind: "member" as const,
@@ -193,6 +195,7 @@ export async function authRoutes(fastify: FastifyInstance) {
             email: linked.email,
             role: linked.role,
             studentId: linked.studentId,
+            ...(billing ? { billing } : {}),
           },
         },
       };

@@ -161,7 +161,7 @@ export const trainingRoutines = pgTable(
     frequency: smallint("frequency").notNull().default(3),
     startDate: date("start_date"),
     endDate: date("end_date"),
-    status: varchar("status", { length: 40 }).notNull().default("Ativa"),
+    status: varchar("status", { length: 40 }).notNull().default("Em digitação"),
     totalSessions: integer("total_sessions").default(0),
     completedSessions: integer("completed_sessions").default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -336,6 +336,20 @@ export const transactions = pgTable(
   (t) => ({
     dateIdx: index("transactions_date_idx").on(t.date),
     typeIdx: index("transactions_type_idx").on(t.type),
+  }),
+);
+
+export const financeCategories = pgTable(
+  "finance_categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: varchar("name", { length: 80 }).notNull(),
+    type: transactionTypeEnum("type").notNull(),
+    matchTerms: text("match_terms").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    nameTypeIdx: uniqueIndex("finance_categories_name_type_uidx").on(t.name, t.type),
   }),
 );
 
